@@ -1,4 +1,3 @@
-import dataclasses
 from logging import getLogger
 
 import torch
@@ -9,31 +8,9 @@ import numpy as np
 
 from pe import VisionTransformer
 from compile import compile
+from utils import map_torch2tvm, PEMappingTVM
 
 logging = getLogger()
-
-@dataclasses.dataclass
-class PESpatialConfig:
-    """
-        Configuration parameters for PE Spatial
-    """
-
-@dataclasses.dataclass
-class PEMappingTVM:
-    """
-        A map from torch to TVM parameters.
-    """
-
-def map_torch2tvm(state_dict: dict) -> PEMappingTVM:
-    """
-        Given a state_dict of a spatial PE model, map it to the correct parameter
-        scheme for our TVM model.
-    """
-    logging.info("Extracting Pytorch weights and mapping to TVM...")
-    for mod, param in state_dict.items():
-        print(mod)
-
-    return
 
 if __name__ == '__main__':
     PE_SPATIAL = '/home/jq/Storage/Model-Weights/HuggingFace-Cache/PE-Spatial-G14-448.pt'

@@ -1,10 +1,39 @@
-# tvm-perception-encoders
-Apache's TVM implementation of Meta's Perception Encoders. Simply to showcase how to convert a new model with the TVM framework; without tracing.
+# TVM Perception Encoders
+Apache's TVM implementation of Meta's Perception Encoders. Simply to showcase how to convert a new model with the TVM framework the **HARD** way.
 
-Hopefully you can learn a thing or two!
+Hopefully you can learn a thing or two! This will become a blog post later on. I chose to translate Perception Encoders because it's fairly recent as of the date of writing this and I read a lot of computer vision papers.
+
+Only supported Spatial PE for now.
+
+## Preliminary Knowledge.
+Before getting started it would be wise to have read the following pieces of ML literature:
+
+0. Perception Encoders
+1. Attention Is All You Need
+2. Rotary Positional Embeddings RoFormer
+3. Auto-Tuning with XGBoost
+4. CUDA Threads, Blocks, Grids, Warps, etc...
+5. Optimization via Stochastic Scheduling
+6. Operator Fusion / Decomposition
+7. Operator Lowering
+8. Accelerator Compilation.
+9. Metal (Apple) support.
+10. CLIP
+
+### Extra Knowledge
+Not necessary but it may fill some small gaps when implementing the architecture.
+
+Going Deeper with Image Transformers https://arxiv.org/pdf/2103.17239
+- Useful to know if you are wondering what that LayerScale module is for. It's a regularization technique during training. The gamma parameter that is learned during training is what is scaling it.
+
+Attention Pooling is taken from the CLIP Paper.
+
+
+## The Full Translated TVM Architecture
+TODO: Include DrawIO graph.
+
 
 ## Setup
-
 When setting up a new conda environment; make sure you don't have any clashing variables in your system's environment.
 
 ```
@@ -27,7 +56,7 @@ chmod u+x build_tvm.sh
 ```
 
 
-Set a conda specific environment variable
+Set a few conda specific environment variable to be able to load the source-built TVM package.
 ```
 conda env config vars set TVM_HOME=$(pwd)/tvm
 conda env config vars set PYTHONPATH=$(pwd)/tvm/python:$PYTHONPATH
@@ -58,11 +87,15 @@ We'll need to implement these 6 main modules in order to be able to have a worki
 
 Each of these modules may come with their own hidden set of obstacles and constraints. You would hope that the translation be seamless between PyTorch's NN module to TVM's Relax NN module; but that usually isn't the case. We will have to resort going into Tensor Expression or TIR to accomplish some of the necessary translations. Or we can go use them for fun because kernel code is fascinating in TIR to leverage some XGBoost optimizations.
 
+So, we'll implement each module in two ways. Leveraging the Relax NN Modules to the best of our capabilities and also a TIR version of it.
+
 ### Rotary Positional Embeddings
 The model makes use of RoPE so we'll have to get that implemented here. Refer to the [paper](https://arxiv.org/pdf/2104.09864) for an in depth understanding of how these positional embeddings work.
 
 ### Layer Scale
 Used with the Residual Attention Blocks.
+
+### Transformer
 
 ### Vision Transformer
 
