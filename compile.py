@@ -64,6 +64,5 @@ def compile(mod, device, opt_level: int = 3):
     target = tvm.target.Target.from_device(device)
     with target:
         ex = tvm.compile(mod, target, relax_pipeline=R.get_pipeline("opt_pe"))
-        vm = R.VirtualMachine(ex, tvm.device("cuda", 0))
-
+        vm = R.VirtualMachine(ex, device)
     return vm
