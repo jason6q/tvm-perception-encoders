@@ -19,8 +19,9 @@ def build_axial_freqs(
     head_dim: int, 
     grid_height: int, # The grid of patches
     grid_width: int,
+    theta=10000,
     num_freqs=1,
-    max_freq=10 # Not sure how to determine this value...
+    max_freq=10 # Not sure how to determine this value... But this would imply 5 rotations.
     ):
     """
         Since we aren't using learned rotations we can build out the frequencies
@@ -29,28 +30,41 @@ def build_axial_freqs(
 
         TODO: Cache in the future?
     """
-    dim = head_dim // 2 
 
+    # These account for the variables m,n in the RoPE equation
+    # Having these variables allow us to calculate the relative position
+    # using m-n.
     x_pos = np.arange(grid_width)
     y_pos = np.arange(grid_height)
-    print(f"x_pos: {x_pos}")
-    print(f"y_pos: {y_pos}")
 
-    # Each contiguous pair of elements in our embedding will be matched
-    # to a frequency value, theta_t in [1,max_freq / 2] * pi
-    freqs = np.linspace(1.0, max_freq / 2, dim) * math.pi
-    print(freqs)
+    # Each contiguous pair of elements in our embedding will be matched.
+    # See paper for theta formula
+    freq_dim = head_dim // 2
+    print("Frequency Dimension: ", freq_dim)
+    freqs = 1.0 / (theta ** (np.arange(0, freq_dim, 2)[: (freq_dim // 2)] / freq_dim))
 
-    # Recollect that we are using Euler's formula and its equivalence to a rotation matrix.
-    # We'll have to build out the rotation matrices for each pair of elements in the embedding
-    # all in a single matrix later on.
-    freqs = np.einsum("..., f -> ... f", x_pos.astype(freqs.dtype), freqs)
-    print(freqs)
-    freqs = repeat(freqs, "... n -> ... (n r)", r=2)
-    print(freqs)
-    print(freqs.shape)
+    # For every frequency value, we'll need to multiply that against each of the token
+    # positions. There is a fixed number of positions determined by the grid_width and grid_height.
+    # So for grid_width possible positions, you should have grid_width * num_of_freqs values.
+    freqs_x = np.einsum("..., f -> ... f", x_pos.astype(freqs.dtype), freqs)
+    freqs_x = repeat(freqs_x, "... n -> ... (n r)", r=2) # Repeat this across the final axis to account for the pair 
 
-    return
+    # Same goes for grid_height: grid_height * num_of_freqs values.
+    freqs_y = np.einsum("..., f -> ... f", y_pos.astype(freqs.dtype), freqs)
+    freqs_y = repeat(freqs_y, "... n -> ... (n r)", r=2) # Repeat this across the final axis to account for the pair 
+
+    # Now build out the axial frequency grid
+    # We want a matrix of the shape (grid_height, grid_width, head_dim) where the last dimension contains the pair of freqs_x,freqs_y
+    # for that x,y patch position.
+    freqs_y = freqs_y[:, None] # Copy across columns, x positions
+    freqs_x = freqs_x[None, :] # Copy axross rows, y positions
+    freqs_y = np.broadcast_to(freqs_y, (grid_height, grid_width, freq_dim))
+    freqs_x = np.broadcast_to(freqs_x, (grid_height, grid_width, freq_dim))
+
+    # Flatten it out into a regular token embedding sequence now.
+    # (B,H,W,freq_dim*2) -> (B,H*W,freq_dim*2)
+    freqs = np.concat([freqs_x,freqs_y], axis=-1).reshape(grid_height * grid_width, -1)
+    return freqs[None,:]
 
 def apply_rope():
     return
