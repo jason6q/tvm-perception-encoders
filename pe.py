@@ -4,19 +4,32 @@
     be able to load the packed params independently for each module and test the output
     against the original pytorch model.
 """
+from dataclasses import dataclass
 from typing import Union, List, Optional, Dict
 
 import tvm.relax.frontend.nn as nn
-from tvm.runtime.ndarray import NDArray
+from tvm.relax.frontend.nn import op as F
+from tvm.script import relax as R
+from tvm.script import tir as T
+from tvm.script import ir as I
 
-def TIRRoPE():
-    """
-        We can just calculate RoPE via TIR. Not a difficult function.
-    """
-    return
+@dataclass
+class SpatialPEConfig:
+    test: int = None
 
-class LayerScale(nn.Module):
-    def __init__(self, dim, init_values: float = 1e-5, inplace: bool =False):
+
+#@I.ir_module
+#class TIRLayerScale:
+#    def __init__(self):
+#        pass
+
+class NNLayerScale(nn.Module):
+    def __init__(
+        self, 
+        dim, 
+        init_values: float = 1e-5, 
+        inplace: bool = False):
+
         super().__init__()
         self.inplace = inplace
         self.dim = dim
@@ -24,7 +37,7 @@ class LayerScale(nn.Module):
 
         self.gamma = nn.Parameter([self.dim], dtype="float32")
 
-    def forward(self, x):
+    def forward(self, x: nn.Tensor):
         # We'll need the learned gamma parameter
         return x * self.gamma
 
@@ -40,26 +53,62 @@ class LayerScale(nn.Module):
         }
         return nn.spec.ModuleSpec.from_raw(mod_spec, self)
 
-class TIRLayerScale(nn.Module):
-    def __init__(self):
-        pass
+#class TIRLayerScale(nn.Module):
+#    def __init__(self):
+#        pass
 
 class AttentionPooling(nn.Module):
     def __init__(self):
         super().__init__()
 
 class SelfAttention(nn.Module):
-    def __init__(self, 
-                 embed_dim: int,):
+    """
+        PyTorch Reference: https://github.com/facebookresearch/perception_models/blob/main/core/vision_encoder/pe.py#L90
+    """
+    def __init__(
+        self, 
+        embed_dim: int,
+        num_heads: int,
+        # We Assume RoPE is in use from the pre-trained weights.
+        # rope: Optional[nn.Module] = None
+        ):
         super().__init__()
 
-    def forward(self, x: nn.Tensor):
-        return
+        # Calculate Self-Attention Dimensions.
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+
+        # Create Non-Bounded Parameters for QKV weights/biases
+        # You could probably just store this as a regular Relax nn.Linear module as well.
+        #self.in_proj_weight = nn.Parameter([3 * embed_dim, embed_dim], "float32")
+        #self.in_proj_bias = nn.Parameter([3 * embed_dim], "float32")
+        self.in_proj = nn.Linear(embed_dim, embed_dim * 3, bias=True, dtype="float32", out_dtype="float32")
+        self.out_proj = nn.Linear(embed_dim * 3, embed_dim, bias=True, dtype="float32", out_dtype="float32")
+
+        self.scale = self.head_dim ** (-0.5) # Softmax scale, 1/sqrt(d_k); used for numerical stability when d_k is large.
+
+        self.attn = RoPE2DAttentionWithQKV
+
+    def forward(self, x: nn.Tensor, freqs: nn.Tensor):#, attn_mask: nn.Tensor):
+        # (embed_dim) -> (3 * embed_dim)
+        proj = self.in_proj(x)
+
+        # We'll want to break out the projections
+        # into QKV now and calculate the attention and score
+        # We'll use a custom TIR function that we wrote.
+        q, k, v = R.op.call_tir(self.attn['forward'], )
+
+        # We need to re-arrange QKV from B S (H D) -> B H S D (Einstein notation)
+
+        return q,k,v
+
 
     def get_default_spec(self):
         mod_spec = {
             "forward": {
-                "x": nn.spec.Tensor([self.dim], "float32"),
+                "x": nn.spec.Tensor(["n", self.embed_dim], "float32"),
+                "freqs": nn.spec.Tensor(["n"], "float32"),
                 "$": {
                     "param_mode": "packed",
                     "effect_mode": "none"
@@ -67,7 +116,7 @@ class SelfAttention(nn.Module):
             }
         }
 
-        return nn.spec.Modulespec.from_raw(mod_spec, self)
+        return nn.spec.ModuleSpec.from_raw(mod_spec, self)
 
 class ResidualAttentionBlock(nn.Module):
     def __init__(self):
