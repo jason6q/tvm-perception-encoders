@@ -9,6 +9,8 @@ import tvm
 import tvm.relax.frontend.nn as nn
 import tvm.relax as R
 
+from tvm import dlight
+
 logger = getLogger()
 
 @R.register_pipeline("opt_pe")
@@ -35,6 +37,11 @@ def _pipeline( ext_mods: List[nn.ExternModule] = None, opt_level: int = 0):
             R.transform.DeadCodeElimination(),
 
             # Phase 4. Low-level Optimizations like dlight scheduling
+            # You need this for CUDA support.
+            dlight.ApplyDefaultSchedule(
+                #dlight.gpu.Matmul(),
+                dlight.gpu.Fallback()
+            ),
 
             # Phase 5. Lowering to VM Bytecode.
             R.transform.RewriteDataflowReshape(),
@@ -65,4 +72,4 @@ def compile(mod, device, opt_level: int = 3):
     with target:
         ex = tvm.compile(mod, target, relax_pipeline=R.get_pipeline("opt_pe"))
         vm = R.VirtualMachine(ex, device)
-    return vm
+    return ex, vm
