@@ -11,17 +11,30 @@ import math
 
 import numpy as np
 from einops import repeat, einsum
-#import tvm
-#import tvm.relax.frontend.nn as nn
 
+from tvm.script import relax as R
+from tvm.script import tir as T
+from tvm.script import ir as I
+
+@R.function
+def apply_rope(
+    x: R.Tensor(("b", "seq", "head_dim"), dtype="float32"), 
+    axial_freqs: R.tensor(("b", "seq", "head_dim"), dtype="float32")
+    ) -> R.Tensor(("b", "seq", "head_dim"), dtype="float32"):
+    """
+        Apply the axial freqs to an embedding. The seq length should
+        be the number of patches from the image.
+    """
+    # head_dim is comprised of both x and y frequencies so we'll
+    # need to consider the first half for x and second half fo y
+
+    return axial_freqs
 
 def build_axial_freqs(
     head_dim: int, 
     grid_height: int, # The grid of patches
     grid_width: int,
     theta=10000,
-    num_freqs=1,
-    max_freq=10 # Not sure how to determine this value... But this would imply 5 rotations.
     ):
     """
         Since we aren't using learned rotations we can build out the frequencies
@@ -54,10 +67,10 @@ def build_axial_freqs(
     freqs_y = repeat(freqs_y, "... n -> ... (n r)", r=2) # Repeat this across the final axis to account for the pair 
 
     # Now build out the axial frequency grid
-    # We want a matrix of the shape (grid_height, grid_width, head_dim) where the last dimension contains the pair of freqs_x,freqs_y
+    # We want a matrix of the shape (grid_height, grid_width, freq_dim) where the last dimension contains the pair of freqs_x,freqs_y
     # for that x,y patch position.
     freqs_y = freqs_y[:, None] # Copy across columns, x positions
-    freqs_x = freqs_x[None, :] # Copy axross rows, y positions
+    freqs_x = freqs_x[None, :] # Copy across rows, y positions
     freqs_y = np.broadcast_to(freqs_y, (grid_height, grid_width, freq_dim))
     freqs_x = np.broadcast_to(freqs_x, (grid_height, grid_width, freq_dim))
 
@@ -65,9 +78,3 @@ def build_axial_freqs(
     # (B,H,W,freq_dim*2) -> (B,H*W,freq_dim*2)
     freqs = np.concat([freqs_x,freqs_y], axis=-1).reshape(grid_height * grid_width, -1)
     return freqs[None,:]
-
-def apply_rope():
-    return
-
-if __name__ == '__main__':
-    build_axial_freqs(10, 10, 10)
