@@ -16,19 +16,42 @@ from tvm.script import relax as R
 from tvm.script import tir as T
 from tvm.script import ir as I
 
-@R.function
-def apply_rope(
-    x: R.Tensor(("b", "seq", "head_dim"), dtype="float32"), 
-    axial_freqs: R.tensor(("b", "seq", "head_dim"), dtype="float32")
-    ) -> R.Tensor(("b", "seq", "head_dim"), dtype="float32"):
-    """
-        Apply the axial freqs to an embedding. The seq length should
-        be the number of patches from the image.
-    """
-    # head_dim is comprised of both x and y frequencies so we'll
-    # need to consider the first half for x and second half fo y
 
-    return axial_freqs
+I.ir_module
+class RoPE2D:
+    @T.prim_func
+    def tir_project_img(image: T.handle, weights: T.handle, out: T.handle):
+        # We project the patches via something similar to conv operator with stride equal to patch dims.
+        # We aren't using bias for Vision Transformer.
+        N,IN_CH,H,W = T.int32(), T.int32(),  T.int32(), T.int32(), T.int32()
+        PATCH_W, PATCH_H = T.int32(), T.int32()
+        STRIDE_W, STRIDE_H = PATCH_W, PATCH_H
+        GRID_W, GRID_H = W // STRIDE_W, H // STRIDE_H
+        OUT_CH = T.int32()
+
+        IMG = T.match_buffer(image, [N,IN_CH,H,W], "float32")
+        W = T.match_buffer(weights, [IN_CH,PATCH_H,PATCH_W,OUT_CH], "float32") 
+        OUT = T.match_buffer(out, [N,OUT_CH], "float32") 
+
+        for n, grid_w, grid_h in T.grid(N, GRID_W, GRID_H):
+            for i,j,k,l in T.grid(IN_CH, PATCH_H, PATCH_W, OUT_CH):
+                with T.block("OUT"):
+                    vi,vj,vk,vl = T.axis.remap("SRRRS", [i,j,k,l])
+                    with T.init():
+                        OUT[n,vl]= T.float32(0)
+
+                    # Calculate patch offset on image.
+                    offset_hj, offset_wk = grid_h*PATCH_H + vj, grid_w*PATCH_W + vk
+
+                    # Multiply weights with image
+                    OUT[n,vl] = IMG[n,vi,offset_hj,offset_wk]
+        return
+    @T.prim_func
+    def tir_apply_rope(input: T.handle, axial_freqs: T.handle):
+        # Dynamic shapes.
+        # Could make hd (Head Dimension) fixed
+        b, seq, hd = T.int32(), T.int32(), T.int32()
+
 
 def build_axial_freqs(
     head_dim: int, 
@@ -76,5 +99,5 @@ def build_axial_freqs(
 
     # Flatten it out into a regular token embedding sequence now.
     # (B,H,W,freq_dim*2) -> (B,H*W,freq_dim*2)
-    freqs = np.concat([freqs_x,freqs_y], axis=-1).reshape(grid_height * grid_width, -1)
+    freqs = np.concatenate([freqs_x,freqs_y], axis=-1).reshape(grid_height * grid_width, -1)
     return freqs[None,:]
