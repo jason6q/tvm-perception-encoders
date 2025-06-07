@@ -17,40 +17,64 @@ from tvm.script import tir as T
 from tvm.script import ir as I
 
 
-I.ir_module
+"""
+    Convert an image into patch embeddings to be used for the Vision Transformer.
+    This is basically just a convolution operator with the strides equal to the patch
+    width and height.
+"""
+@I.ir_module
+class ImagePatchEmbedding:
+    @T.prim_func
+    def main(img: T.handle, weights: T.handle, out: T.handle):
+        N,IN_CH,IMG_H,IMG_W = T.int32(), T.int32(), T.int32(), T.int32()
+        PATCH_H,PATCH_W,OUT_CH = T.int32(), T.int32(), T.int32()
+        IMG = T.match_buffer(img, [N,IN_CH,IMG_H,IMG_W], "float32")
+        PARAM = T.match_buffer(weights, [OUT_CH, IN_CH, PATCH_H,PATCH_W], "float32") 
+        OUT = T.match_buffer(out, [N, OUT_CH, IMG_H // PATCH_H, IMG_W // PATCH_W], "float32") 
+
+        # Iterate through grid by strides.
+        for n,out_ch,grid_h,grid_w in T.grid(N,OUT_CH, IMG_H // PATCH_H, IMG_W // PATCH_W):
+            with T.block("conv2d"):
+                vn,vout_ch,vgrid_h,vgrid_w = T.axis.remap("SSSS", [n,out_ch,grid_h,grid_w])
+                OUT[vn,vout_ch,vgrid_h,vgrid_w] = T.float32(0)
+                # Iterate through weights.
+                for in_ch,patch_h,patch_w in T.grid(IN_CH,PATCH_H,PATCH_W):
+                    with T.block("patch"):
+                        vin_ch,vpatch_h,vpatch_w = T.axis.remap("RRR", [in_ch,patch_h,patch_w])
+                        offset_h, offset_w = vgrid_h*PATCH_H + vpatch_h, vgrid_w*PATCH_W + vpatch_w
+                        OUT[vn,vout_ch,vgrid_h,vgrid_w] += PARAM[vout_ch,vin_ch,vpatch_h,vpatch_w] * IMG[vn,vin_ch,offset_h,offset_w]
+
+@I.ir_module
 class RoPE2D:
     @T.prim_func
-    def tir_project_img(image: T.handle, weights: T.handle, out: T.handle):
-        # We project the patches via something similar to conv operator with stride equal to patch dims.
-        # We aren't using bias for Vision Transformer.
-        N,IN_CH,H,W = T.int32(), T.int32(),  T.int32(), T.int32(), T.int32()
-        PATCH_W, PATCH_H = T.int32(), T.int32()
-        STRIDE_W, STRIDE_H = PATCH_W, PATCH_H
-        GRID_W, GRID_H = W // STRIDE_W, H // STRIDE_H
-        OUT_CH = T.int32()
+    def main():
 
-        IMG = T.match_buffer(image, [N,IN_CH,H,W], "float32")
-        W = T.match_buffer(weights, [IN_CH,PATCH_H,PATCH_W,OUT_CH], "float32") 
-        OUT = T.match_buffer(out, [N,OUT_CH], "float32") 
+    #@T.prim_func
+    #def tir_project_img(
+        #image: T.handle, 
+        #weights: T.handle, 
+        #out: T.handle
+    #):
+        ## We project the patches via something similar to conv operator with stride equal to patch dims.
+        ## We aren't using bias for Vision Transformer.
+        #N,IN_CH,H,W = T.int32(), T.int32(), T.int32(), T.int32()
+        #PATCH_H, PATCH_W = T.int32(), T.int32()
+        #OUT_CH = T.int32()
 
-        for n, grid_w, grid_h in T.grid(N, GRID_W, GRID_H):
-            for i,j,k,l in T.grid(IN_CH, PATCH_H, PATCH_W, OUT_CH):
-                with T.block("OUT"):
-                    vi,vj,vk,vl = T.axis.remap("SRRRS", [i,j,k,l])
-                    with T.init():
-                        OUT[n,vl]= T.float32(0)
+        #IMG = T.match_buffer(image, [N,IN_CH,H,W], "float32")
+        #PARAM = T.match_buffer(weights, [IN_CH,PATCH_H,PATCH_W,OUT_CH], "float32") 
+        #OUT = T.match_buffer(out, [N,(W // PATCH_W)*(H // PATCH_H),OUT_CH], "float32") 
 
-                    # Calculate patch offset on image.
-                    offset_hj, offset_wk = grid_h*PATCH_H + vj, grid_w*PATCH_W + vk
+        #STRIDE_H, STRIDE_W = PATCH_H, PATCH_W
+        #for n,in_ch,ph,pw,out_ch in T.grid(N,IN_CH,PATCH_H,PATCH_W,OUT_CH):
+            #with T.block("conv_patch"):
+                #vn,vin_ch, vph, vpw, vout_ch = T.remap("SRRRS",[n,in_ch,ph,pw,out_ch])
 
-                    # Multiply weights with image
-                    OUT[n,vl] = IMG[n,vi,offset_hj,offset_wk]
-        return
-    @T.prim_func
-    def tir_apply_rope(input: T.handle, axial_freqs: T.handle):
-        # Dynamic shapes.
-        # Could make hd (Head Dimension) fixed
-        b, seq, hd = T.int32(), T.int32(), T.int32()
+    #@T.prim_func
+    #def tir_apply_rope(input: T.handle, axial_freqs: T.handle):
+        ## Dynamic shapes.
+        ## Could make hd (Head Dimension) fixed
+        #b, seq, hd = T.int32(), T.int32(), T.int32()
 
 
 def build_axial_freqs(
