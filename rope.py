@@ -6,6 +6,8 @@
 
     We'll simplify our implementation here and just feed the frequencies through 
     each attention layer rather than having an independent module like in the PyTorch code.
+
+    TODO: Add assertions and checks for invalid shapes.
 """
 import math
 
@@ -30,24 +32,37 @@ class ImagePatchEmbedding:
         PATCH_H,PATCH_W,OUT_CH = T.int32(), T.int32(), T.int32()
         IMG = T.match_buffer(img, [N,IN_CH,IMG_H,IMG_W], "float32")
         PARAM = T.match_buffer(weights, [OUT_CH, IN_CH, PATCH_H,PATCH_W], "float32") 
-        OUT = T.match_buffer(out, [N, OUT_CH, IMG_H // PATCH_H, IMG_W // PATCH_W], "float32") 
+        OUT = T.match_buffer(out, [N, OUT_CH, (IMG_H*IMG_W)//(PATCH_H*PATCH_W)], "float32")
+        _OUT = T.alloc_buffer([N, OUT_CH, IMG_H // PATCH_H, IMG_W // PATCH_W], "float32") 
 
         # Iterate through grid by strides.
         for n,out_ch,grid_h,grid_w in T.grid(N,OUT_CH, IMG_H // PATCH_H, IMG_W // PATCH_W):
             with T.block("conv2d"):
                 vn,vout_ch,vgrid_h,vgrid_w = T.axis.remap("SSSS", [n,out_ch,grid_h,grid_w])
-                OUT[vn,vout_ch,vgrid_h,vgrid_w] = T.float32(0)
+                with T.init():
+                    _OUT[vn,vout_ch,vgrid_h,vgrid_w] = T.float32(0)
                 # Iterate through weights.
                 for in_ch,patch_h,patch_w in T.grid(IN_CH,PATCH_H,PATCH_W):
                     with T.block("patch"):
                         vin_ch,vpatch_h,vpatch_w = T.axis.remap("RRR", [in_ch,patch_h,patch_w])
                         offset_h, offset_w = vgrid_h*PATCH_H + vpatch_h, vgrid_w*PATCH_W + vpatch_w
-                        OUT[vn,vout_ch,vgrid_h,vgrid_w] += PARAM[vout_ch,vin_ch,vpatch_h,vpatch_w] * IMG[vn,vin_ch,offset_h,offset_w]
+                        _OUT[vn,vout_ch,vgrid_h,vgrid_w] += PARAM[vout_ch,vin_ch,vpatch_h,vpatch_w] * IMG[vn,vin_ch,offset_h,offset_w]
+
+        # Re-shape
+        # Not really sure if I should do a re-shape here; might be expensive.
+        GRID_H, GRID_W = IMG_H // PATCH_H, IMG_W // PATCH_W
+        for n,out_ch,grid_y,grid_x in T.grid(N,OUT_CH, GRID_H, GRID_W):
+            with T.block("reshape_patch_embed"):
+                vn,vout_ch,vgrid_y,vgrid_x = T.axis.remap("SSSS", [n,out_ch,grid_y,grid_x])
+                with T.init():
+                    OUT[vn,vout_ch, vgrid_y*GRID_W + vgrid_x] = T.float32(0)
+                OUT[vn,vout_ch,vgrid_y*GRID_W + vgrid_x] += _OUT[vn,vout_ch,vgrid_y,vgrid_x]
 
 @I.ir_module
 class RoPE2D:
     @T.prim_func
-    def main():
+    def main(patch_embeds: T.handle, axial_freqs: T.handle):
+        x = T.int32()
 
     #@T.prim_func
     #def tir_project_img(

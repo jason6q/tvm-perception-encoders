@@ -48,9 +48,10 @@ def test_freqs() -> None:
 
     img = tvm.nd.array(np.random.uniform(size=(1,3,img_h,img_w)).astype("float32"))
     weights = tvm.nd.array(np.random.uniform(size=(dim_head,3,patch_h, patch_w)).astype("float32"))
-    out = tvm.nd.array(np.zeros((1,dim_head,grid_h,grid_w), dtype="float32"))
+    out = tvm.nd.array(np.zeros((1,dim_head,grid_h*grid_w), dtype="float32"))
     rope2d_lib(img, weights, out)
     out_pt = F.conv2d(torch.tensor(img.numpy()), torch.tensor(weights.numpy()), stride=(patch_h,patch_w))
+    out_pt = out_pt.reshape(1,dim_head,grid_h*grid_w)
     print("Image Patch Embedding Loss: ", (abs(out.numpy() - out_pt.numpy())).mean())
 
 
