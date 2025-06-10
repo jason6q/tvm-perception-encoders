@@ -16,13 +16,29 @@ def test_rope2d(
     grid_w: int = 64, grid_h: int = 32,
     img_w: int = 768, img_h: int = 384
 ) -> None:
-    # Test RoPE2D
-    pe_rope2d = pe_rope.Rope2D(dim=dim_head)
-    device = torch.device('cpu')
-    pe_rope2d.init_tensors()
-    pe_rope2d.update_grid(device, grid_h, grid_w)
+    dim_head = dim // num_heads
+    patch_w, patch_h = img_w // grid_w, img_h // grid_h
 
-    tvm_rope2d = tvm.compile(RoPE2DAttention, target="llvm")
+    # Build input embedding
+    np_img = np.random.uniform(size=(1, 3,img_h,img_w)).astype("float32")
+    tvm_img = tvm.nd.array(np_img)
+
+    img_embed = tvm.compile(ImagePatchEmbedding, target="llvm")
+    weights = tvm.nd.array(np.random.uniform(size=(dim_head,3,patch_h, patch_w)).astype("float32"))
+    out = tvm.nd.array(np.zeros((1,dim_head,grid_h*grid_w), dtype="float32"))
+    img_embed(tvm_img, weights, out)
+
+    np_x, pt_x = out.numpy(), torch.tensor(out.numpy()) # [N, HEAD_DIM, SEQ]
+    tvm_x = tvm.nd.array(np_x)
+    print(np_x.shape)
+
+    ## Test RoPE2D
+    #pe_rope2d = pe_rope.Rope2D(dim=dim_head)
+    #device = torch.device('cpu')
+    #pe_rope2d.init_tensors()
+    #pe_rope2d.update_grid(device, grid_h, grid_w)
+
+    #tvm_rope2d = tvm.compile(RoPE2DAttention, target="llvm")
 
 def test_embed(
     dim: int = 256, num_heads: int = 4,
