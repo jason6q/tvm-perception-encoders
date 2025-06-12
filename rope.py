@@ -58,11 +58,52 @@ class ImagePatchEmbedding:
                     OUT[vn,vout_ch, vgrid_y*GRID_W + vgrid_x] = T.float32(0)
                 OUT[vn,vout_ch,vgrid_y*GRID_W + vgrid_x] += _OUT[vn,vout_ch,vgrid_y,vgrid_x]
 
+"""
+    See Page 7 of RoFormer. Apply the sum of hadamards twice. For
+    x and y.
+"""
 @I.ir_module
-class RoPE2D:
+class RoPE2DAttention:
     @T.prim_func
-    def main(patch_embeds: T.handle, axial_freqs: T.handle):
-        x = T.int32()
+    def apply_rot_embed(
+        q: T.handle, k: T.handle, freqs: T.handle, 
+        out_q: T.handle, out_k: T.handle
+    ):
+        N, NUM_HEADS, SEQ, HEAD_DIM = T.int32(), T.int32(), T.int32(),  T.int32()
+
+        Q = T.match_buffer(q, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
+        K = T.match_buffer(k, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
+        OUT_Q = T.match_buffer(out_q, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
+        OUT_K = T.match_buffer(out_k, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
+        FREQS = T.match_buffer(freqs, [], "float32")
+
+    @T.prim_func
+    def main(
+        x: T.handle, freqs: T.handle, 
+        q_w: T.handle, q_b: T.handle, 
+        k_w: T.handle, k_b: T.handle,
+        v_w: T.handle, v_b: T.handle,
+        out: T.handle
+    ):
+        N, EMBED_DIM, SEQ = T.int32(), T.int32(), T.int32()
+        HEAD_DIM = T.int32()
+        X = T.match_buffer(x, [N, EMBED_DIM, SEQ], "float32")
+        FREQS = T.match_buffer(freqs, [N, SEQ, HEAD_DIM])
+
+        # We're packing the weights here.
+        QKV_W = T.match_buffer(q_w, [3*EMBED_DIM, EMBED_DIM], "float32")
+        QKV_B = T.match_buffer(q_b, [3*EMBED_DIM], "float32")
+        OUT = T.match_buffer(out, [], "float32")
+
+        Q = T.alloc_buffer([N,], "float32")
+        K = T.alloc_buffer([N,], "float32")
+        V = T.alloc_buffer([N,], "float32")
+
+        # Calculate Q, K
+
+        # Calculate Softmax Attention
+
+        # Calculate V
 
     #@T.prim_func
     #def tir_project_img(
@@ -139,4 +180,5 @@ def build_axial_freqs(
     # Flatten it out into a regular token embedding sequence now.
     # (B,H,W,freq_dim*2) -> (B,H*W,freq_dim*2)
     freqs = np.concatenate([freqs_x,freqs_y], axis=-1).reshape(grid_height * grid_width, -1)
+
     return freqs[None,:]

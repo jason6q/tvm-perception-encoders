@@ -12,33 +12,55 @@ from rope import build_axial_freqs, ImagePatchEmbedding, RoPE2DAttention
 np.random.seed(42)
 
 def test_rope2d(
-    dim: int = 256, num_heads: int = 4,
-    grid_w: int = 64, grid_h: int = 32,
-    img_w: int = 768, img_h: int = 384
+    batch: int = 1,
+    width: int = 1536, num_heads: int = 16,
+    patch_size = 14, img_w: int = 448, img_h: int = 448,
 ) -> None:
-    dim_head = dim // num_heads
-    patch_w, patch_h = img_w // grid_w, img_h // grid_h
+    dim_head = width // num_heads
+    patch_w, patch_h = patch_size, patch_size
+    grid_h, grid_w = img_h // patch_h, img_w // patch_w
+    seq = grid_h * grid_w
 
     # Build input embedding
-    np_img = np.random.uniform(size=(1, 3,img_h,img_w)).astype("float32")
+    np_img = np.random.uniform(size=(batch, 3,img_h,img_w)).astype("float32")
     tvm_img = tvm.nd.array(np_img)
 
     img_embed = tvm.compile(ImagePatchEmbedding, target="llvm")
-    weights = tvm.nd.array(np.random.uniform(size=(dim_head,3,patch_h, patch_w)).astype("float32"))
-    out = tvm.nd.array(np.zeros((1,dim_head,grid_h*grid_w), dtype="float32"))
+    weights = tvm.nd.array(np.random.uniform(size=(width,3,patch_h, patch_w)).astype("float32"))
+    out = tvm.nd.array(np.zeros((batch,width,seq), dtype="float32"))
     img_embed(tvm_img, weights, out)
 
-    np_x, pt_x = out.numpy(), torch.tensor(out.numpy()) # [N, HEAD_DIM, SEQ]
+    np_x, pt_x = out.numpy(), torch.tensor(out.numpy()) # [N, EMBED_DIM, SEQ]
     tvm_x = tvm.nd.array(np_x)
-    print(np_x.shape)
+    print("Image Patch Embedding Shape: ", np_x.shape)
+
+    # Get freqs for grid.
+    # dim_head because axial frequencies is per head in MHA.
+    freqs = build_axial_freqs(dim_head, grid_h, grid_w).transpose(0,2,1)
+    pt_freqs = torch.tensor(freqs)
+    print("Frequency Shape: ", freqs.shape)
 
     ## Test RoPE2D
-    #pe_rope2d = pe_rope.Rope2D(dim=dim_head)
-    #device = torch.device('cpu')
-    #pe_rope2d.init_tensors()
-    #pe_rope2d.update_grid(device, grid_h, grid_w)
+    pe_rope2d = pe_rope.Rope2D(dim=dim_head)
+    device = torch.device('cpu')
+    pe_rope2d.init_tensors()
+    pe_rope2d.update_grid(device, grid_h, grid_w)
+    np_q = np.random.uniform(size=(batch,num_heads, seq, dim_head)).astype("float32")
+    pt_q, tvm_q = torch.tensor(np_q), tvm.nd.array(np_q)
+    np_k = np.random.uniform(size=(batch,num_heads,seq, dim_head)).astype("float32")
+    pt_k, tvm_k = torch.tensor(np_k), tvm.nd.array(np_k)
+    print("Q Shape: ", np_q.shape)
+    print("K Shape: ", np_k.shape)
+    print("freqs Shape: ", pt_freqs.shape)
 
-    #tvm_rope2d = tvm.compile(RoPE2DAttention, target="llvm")
+    assert num_heads*dim_head == width, '{num_heads}*{dim_head} should be {width}'
+
+    # Calculate PyTorch RoPE2D
+    pt_q_rope, pt_k_rope = pe_rope2d(pt_q, pt_k)
+
+    # Calculate TVM RoPE2D
+    tvm_rope2d = tvm.compile(RoPE2DAttention, target="llvm")
+    tvm_rope2d['apply_rot_embed']
 
 def test_embed(
     dim: int = 256, num_heads: int = 4,
@@ -66,7 +88,8 @@ def test_embed(
     img_embed(img, weights, out)
     out_pt = F.conv2d(torch.tensor(img.numpy()), torch.tensor(weights.numpy()), stride=(patch_h,patch_w))
     out_pt = out_pt.reshape(1,dim_head,grid_h*grid_w)
-    print("Image Embedding Shape: ", out.numpy().shape)
+    print("PT Image Embedding Shape: ", out_pt.shape)
+    print("TVM Image Embedding Shape: ", out.numpy().shape)
     print("Mean Absolute Difference of Image Embedding: ", (abs(out.numpy() - out_pt.numpy())).mean())
 
 def test_freqs(
