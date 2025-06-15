@@ -11,6 +11,18 @@ from rope import build_axial_freqs, ImagePatchEmbedding, RoPE2DAttention
 
 np.random.seed(42)
 
+def test_half_rotate():
+    x = np.arange(100).reshape(1,1,1,-1).astype("float32")
+    tvm_x = tvm.nd.array(x)
+    tvm_out = tvm.nd.array(np.zeros_like(x))
+
+    tvm_rope2d = tvm.compile(RoPE2DAttention, target="llvm")
+    tvm_rope2d['half_rotate'](tvm_x, tvm_out)
+
+    # TODO: Compare...
+
+    return
+
 def test_rope2d(
     batch: int = 1,
     width: int = 1536, num_heads: int = 16,
@@ -36,8 +48,8 @@ def test_rope2d(
 
     # Get freqs for grid.
     # dim_head because axial frequencies is per head in MHA.
-    freqs = build_axial_freqs(dim_head, grid_h, grid_w).transpose(0,2,1)
-    pt_freqs = torch.tensor(freqs)
+    freqs = build_axial_freqs(dim_head, grid_h, grid_w).astype("float32")
+    tvm_freqs = tvm.nd.array(freqs)
     print("Frequency Shape: ", freqs.shape)
 
     ## Test RoPE2D
@@ -51,7 +63,7 @@ def test_rope2d(
     pt_k, tvm_k = torch.tensor(np_k), tvm.nd.array(np_k)
     print("Q Shape: ", np_q.shape)
     print("K Shape: ", np_k.shape)
-    print("freqs Shape: ", pt_freqs.shape)
+    print("freqs Shape: ", tvm_freqs.shape)
 
     assert num_heads*dim_head == width, '{num_heads}*{dim_head} should be {width}'
 
@@ -60,7 +72,9 @@ def test_rope2d(
 
     # Calculate TVM RoPE2D
     tvm_rope2d = tvm.compile(RoPE2DAttention, target="llvm")
-    tvm_rope2d['apply_rot_embed']
+    tvm_outq = tvm.nd.array(np.zeros_like(np_q).astype("float32"))
+    tvm_outk = tvm.nd.array(np.zeros_like(np_k).astype("float32"))
+    tvm_rope2d['apply_rot_embed'](tvm_q, tvm_k, tvm_freqs, tvm_outq, tvm_outk)
 
 def test_embed(
     dim: int = 256, num_heads: int = 4,
@@ -114,4 +128,5 @@ if __name__ == '__main__':
     print("Test generating axial frequencies")
     test_freqs()
     test_embed()
+    test_half_rotate()
     test_rope2d()

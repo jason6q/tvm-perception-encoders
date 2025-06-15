@@ -59,23 +59,52 @@ class ImagePatchEmbedding:
                 OUT[vn,vout_ch,vgrid_y*GRID_W + vgrid_x] += _OUT[vn,vout_ch,vgrid_y,vgrid_x]
 
 """
-    See Page 7 of RoFormer. Apply the sum of hadamards twice. For
-    x and y.
+    See Page 7 of RoFormer for the formulation only applying euler's formulation.
 """
 @I.ir_module
 class RoPE2DAttention:
+    @T.prim_func
+    def half_rotate(x: T.handle, rot_x: T.handle):
+        N, NUM_HEADS, SEQ_LEN, HEAD_DIM = T.int32(), T.int32(), T.int32(), T.int32()
+
+        X = T.match_buffer(x, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
+        ROT_X = T.match_buffer(rot_x, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
+
+        # We're going to rotate the second half of x and negate it for euler's
+        # rotation matrix. We can then decompose the operation into a sum of
+        # hadamard products later on. This will also interlace the elements.
+        for n, num_heads, seq_len, embed_dim in T.grid(N, NUM_HEADS, SEQ_LEN, HEAD_DIM // 2):
+            with T.block("half_rotate"):
+                vn, vnh, vsl, ved = T.axis.remap("SSSS", [n, num_heads, seq_len, embed_dim])
+                ROT_X[vn, vnh, vsl, ved*2] = -X[vn, vnh, vsl, HEAD_DIM // 2 + ved]
+                ROT_X[vn, vnh, vsl, ved*2 + 1] = X[vn, vnh, vsl, ved]
+
+
     @T.prim_func
     def apply_rot_embed(
         q: T.handle, k: T.handle, freqs: T.handle, 
         out_q: T.handle, out_k: T.handle
     ):
-        N, NUM_HEADS, SEQ, HEAD_DIM = T.int32(), T.int32(), T.int32(),  T.int32()
+        N, NUM_HEADS, SEQ_LEN, HEAD_DIM = T.int32(), T.int32(), T.int32(), T.int32()
+        Q = T.match_buffer(q, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
+        K = T.match_buffer(k, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
+        OUT_Q = T.match_buffer(out_q, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
+        OUT_K = T.match_buffer(out_k, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
+        FREQS = T.match_buffer(freqs, [N, SEQ_LEN, HEAD_DIM], "float32")
 
-        Q = T.match_buffer(q, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
-        K = T.match_buffer(k, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
-        OUT_Q = T.match_buffer(out_q, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
-        OUT_K = T.match_buffer(out_k, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
-        FREQS = T.match_buffer(freqs, [], "float32")
+        # Process Q and K
+        # Freqs should already be aligned 1-d row major with Q and K
+        # Last dim of FREQS is split in two. [..., (n,r)] -> [..., n r], r=2
+        # So we iterate through only half of the head dim.
+        # for n, num_heads, seq_len, head_dim in T.grid(N, NUM_HEADS, SEQ_LEN, HEAD_DIM // 2):
+        #     with T.block("rot_embed_cos"):
+        #         vn, vnum_heads, vseq_len, vhead_dim = T.axis.remap("SSSS", [n, num_heads, seq_len, head_dim])
+        #         OUT_Q[vn, vnum_heads, vseq_len, vhead_dim*2] = T.cos(FREQS[]) * Q[vn, vnum_heads,vseq_len, vhead_dim*2]
+        #         OUT_Q[vn, vnum_heads, vseq_len, vhead_dim*2 + 1] = T.cos() * Q[vn, vnum_heads.vseq_len, vhead_dim*2 + 1]
+        #         OUT_K[vn, vnum_heads, vseq_len, vhead_dim*2] = T.cos() * K[vn, vnum_heads,vseq_len, vhead_dim*2]
+        #         OUT_K[vn, vnum_heads, vseq_len, vhead_dim*2 + 1] = T.cos() * K[vn, vnum_heads.vseq_len, vhead_dim*2 + 1]
+
+        #     with T.block("rot_embed_sin"):
 
     @T.prim_func
     def main(
@@ -104,34 +133,6 @@ class RoPE2DAttention:
         # Calculate Softmax Attention
 
         # Calculate V
-
-    #@T.prim_func
-    #def tir_project_img(
-        #image: T.handle, 
-        #weights: T.handle, 
-        #out: T.handle
-    #):
-        ## We project the patches via something similar to conv operator with stride equal to patch dims.
-        ## We aren't using bias for Vision Transformer.
-        #N,IN_CH,H,W = T.int32(), T.int32(), T.int32(), T.int32()
-        #PATCH_H, PATCH_W = T.int32(), T.int32()
-        #OUT_CH = T.int32()
-
-        #IMG = T.match_buffer(image, [N,IN_CH,H,W], "float32")
-        #PARAM = T.match_buffer(weights, [IN_CH,PATCH_H,PATCH_W,OUT_CH], "float32") 
-        #OUT = T.match_buffer(out, [N,(W // PATCH_W)*(H // PATCH_H),OUT_CH], "float32") 
-
-        #STRIDE_H, STRIDE_W = PATCH_H, PATCH_W
-        #for n,in_ch,ph,pw,out_ch in T.grid(N,IN_CH,PATCH_H,PATCH_W,OUT_CH):
-            #with T.block("conv_patch"):
-                #vn,vin_ch, vph, vpw, vout_ch = T.remap("SRRRS",[n,in_ch,ph,pw,out_ch])
-
-    #@T.prim_func
-    #def tir_apply_rope(input: T.handle, axial_freqs: T.handle):
-        ## Dynamic shapes.
-        ## Could make hd (Head Dimension) fixed
-        #b, seq, hd = T.int32(), T.int32(), T.int32()
-
 
 def build_axial_freqs(
     head_dim: int, 
@@ -179,6 +180,8 @@ def build_axial_freqs(
 
     # Flatten it out into a regular token embedding sequence now.
     # (B,H,W,freq_dim*2) -> (B,H*W,freq_dim*2)
+    # NOTE: We are using a variant of RoPE2D that concatenates instead of adding.
+    # therefore, half of the embedding space will be y rotations.
     freqs = np.concatenate([freqs_x,freqs_y], axis=-1).reshape(grid_height * grid_width, -1)
 
     return freqs[None,:]
