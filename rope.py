@@ -62,7 +62,7 @@ class ImagePatchEmbedding:
     See Page 7 of RoFormer for the formulation only applying euler's formulation.
 """
 @I.ir_module
-class RoPE2DAttention:
+class RoPE2D:
     @T.prim_func
     def half_rotate(x: T.handle, rot_x: T.handle):
         N, NUM_HEADS, SEQ_LEN, HEAD_DIM = T.int32(), T.int32(), T.int32(), T.int32()
@@ -79,30 +79,31 @@ class RoPE2DAttention:
                 ROT_X[vn, vnh, vsl, ved*2] = -X[vn, vnh, vsl, HEAD_DIM // 2 + ved]
                 ROT_X[vn, vnh, vsl, ved*2 + 1] = X[vn, vnh, vsl, ved]
 
-
     @T.prim_func
     def apply_rot_embed(
-        q: T.handle, k: T.handle, freqs: T.handle, 
-        out_q: T.handle, out_k: T.handle
-    ):
+        embed: T.handle, freqs: T.handle, out_embed: T.handle):
         N, NUM_HEADS, SEQ_LEN, HEAD_DIM = T.int32(), T.int32(), T.int32(), T.int32()
-        Q = T.match_buffer(q, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
-        K = T.match_buffer(k, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
-        OUT_Q = T.match_buffer(out_q, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
-        OUT_K = T.match_buffer(out_k, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
+        E = T.match_buffer(embed, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
+        OUT_E = T.match_buffer(embed, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
         FREQS = T.match_buffer(freqs, [N, SEQ_LEN, HEAD_DIM], "float32")
 
-        # Process Q and K
+        ROT_E = T.alloc_buffer([N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
+
+        # Copied from half_rotate func. Not sure how to call prim_func within prim_func at the moment.
+        # Could use Relax function as main instead though.
+        for n, num_heads, seq_len, embed_dim in T.grid(N, NUM_HEADS, SEQ_LEN, HEAD_DIM // 2):
+            with T.block("half_rotate"):
+                vn, vnh, vsl, ved = T.axis.remap("SSSS", [n, num_heads, seq_len, embed_dim])
+                ROT_E[vn, vnh, vsl, ved*2] = -E[vn, vnh, vsl, HEAD_DIM // 2 + ved]
+                ROT_E[vn, vnh, vsl, ved*2 + 1] = E[vn, vnh, vsl, ved]
+
         # Freqs should already be aligned 1-d row major with Q and K
-        # Last dim of FREQS is split in two. [..., (n,r)] -> [..., n r], r=2
-        # So we iterate through only half of the head dim.
-        # for n, num_heads, seq_len, head_dim in T.grid(N, NUM_HEADS, SEQ_LEN, HEAD_DIM // 2):
-        #     with T.block("rot_embed_cos"):
-        #         vn, vnum_heads, vseq_len, vhead_dim = T.axis.remap("SSSS", [n, num_heads, seq_len, head_dim])
-        #         OUT_Q[vn, vnum_heads, vseq_len, vhead_dim*2] = T.cos(FREQS[]) * Q[vn, vnum_heads,vseq_len, vhead_dim*2]
-        #         OUT_Q[vn, vnum_heads, vseq_len, vhead_dim*2 + 1] = T.cos() * Q[vn, vnum_heads.vseq_len, vhead_dim*2 + 1]
-        #         OUT_K[vn, vnum_heads, vseq_len, vhead_dim*2] = T.cos() * K[vn, vnum_heads,vseq_len, vhead_dim*2]
-        #         OUT_K[vn, vnum_heads, vseq_len, vhead_dim*2 + 1] = T.cos() * K[vn, vnum_heads.vseq_len, vhead_dim*2 + 1]
+        for n, num_heads, seq_len, head_dim in T.grid(N, NUM_HEADS, SEQ_LEN, HEAD_DIM // 2):
+            # Cosine is easy. Just multiply in order.
+            with T.block("rot_embed_cos"):
+                vn, vnum_heads, vseq_len, vhead_dim = T.axis.remap("SSSS", [n, num_heads, seq_len, head_dim])
+                OUT_E[vn, vnum_heads, vseq_len, vhead_dim] = T.cos(FREQS[vn,vseq_len, vhead_dim]) * E[vn, vnum_heads,vseq_len, vhead_dim]
+                OUT_E[vn, vnum_heads, vseq_len, vhead_dim] += T.sin() * ROT_E[vn, vnum_heads, vseq_len, vhead_dim]
 
         #     with T.block("rot_embed_sin"):
 

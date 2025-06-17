@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import numpy as np
 
 import core.vision_encoder.rope as pe_rope
-from rope import build_axial_freqs, ImagePatchEmbedding, RoPE2DAttention
+from rope import build_axial_freqs, ImagePatchEmbedding, RoPE2D
 
 np.random.seed(42)
 
@@ -16,7 +16,7 @@ def test_half_rotate():
     tvm_x = tvm.nd.array(x)
     tvm_out = tvm.nd.array(np.zeros_like(x))
 
-    tvm_rope2d = tvm.compile(RoPE2DAttention, target="llvm")
+    tvm_rope2d = tvm.compile(RoPE2D, target="llvm")
     tvm_rope2d['half_rotate'](tvm_x, tvm_out)
 
     # TODO: Compare...
@@ -71,7 +71,7 @@ def test_rope2d(
     pt_q_rope, pt_k_rope = pe_rope2d(pt_q, pt_k)
 
     # Calculate TVM RoPE2D
-    tvm_rope2d = tvm.compile(RoPE2DAttention, target="llvm")
+    tvm_rope2d = tvm.compile(RoPE2D, target="llvm")
     tvm_outq = tvm.nd.array(np.zeros_like(np_q).astype("float32"))
     tvm_outk = tvm.nd.array(np.zeros_like(np_k).astype("float32"))
     tvm_rope2d['apply_rot_embed'](tvm_q, tvm_k, tvm_freqs, tvm_outq, tvm_outk)
