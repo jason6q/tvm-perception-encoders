@@ -84,7 +84,7 @@ class RoPE2D:
         embed: T.handle, freqs: T.handle, out_embed: T.handle):
         N, NUM_HEADS, SEQ_LEN, HEAD_DIM = T.int32(), T.int32(), T.int32(), T.int32()
         E = T.match_buffer(embed, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
-        OUT_E = T.match_buffer(embed, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
+        OUT_E = T.match_buffer(out_embed, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
         FREQS = T.match_buffer(freqs, [N, SEQ_LEN, HEAD_DIM], "float32")
 
         ROT_E = T.alloc_buffer([N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
@@ -98,14 +98,12 @@ class RoPE2D:
                 ROT_E[vn, vnh, vsl, ved*2 + 1] = E[vn, vnh, vsl, ved]
 
         # Freqs should already be aligned 1-d row major with Q and K
-        for n, num_heads, seq_len, head_dim in T.grid(N, NUM_HEADS, SEQ_LEN, HEAD_DIM // 2):
+        for n, num_heads, seq_len, head_dim in T.grid(N, NUM_HEADS, SEQ_LEN, HEAD_DIM):
             # Cosine is easy. Just multiply in order.
-            with T.block("rot_embed_cos"):
+            with T.block("rot_embed"):
                 vn, vnum_heads, vseq_len, vhead_dim = T.axis.remap("SSSS", [n, num_heads, seq_len, head_dim])
-                OUT_E[vn, vnum_heads, vseq_len, vhead_dim] = T.cos(FREQS[vn,vseq_len, vhead_dim]) * E[vn, vnum_heads,vseq_len, vhead_dim]
-                OUT_E[vn, vnum_heads, vseq_len, vhead_dim] += T.sin() * ROT_E[vn, vnum_heads, vseq_len, vhead_dim]
-
-        #     with T.block("rot_embed_sin"):
+                OUT_E[vn, vnum_heads, vseq_len, vhead_dim] = T.cos(FREQS[vn, vseq_len, vhead_dim]) * E[vn, vnum_heads, vseq_len, vhead_dim] \
+                                                             + T.sin(FREQS[vn, vseq_len, vhead_dim]) * ROT_E[vn, vnum_heads, vseq_len, vhead_dim]
 
     @T.prim_func
     def main(

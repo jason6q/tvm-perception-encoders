@@ -20,6 +20,7 @@ def test_half_rotate():
     tvm_rope2d['half_rotate'](tvm_x, tvm_out)
 
     # TODO: Compare...
+    print(tvm_out)
 
     return
 
@@ -74,7 +75,13 @@ def test_rope2d(
     tvm_rope2d = tvm.compile(RoPE2D, target="llvm")
     tvm_outq = tvm.nd.array(np.zeros_like(np_q).astype("float32"))
     tvm_outk = tvm.nd.array(np.zeros_like(np_k).astype("float32"))
-    tvm_rope2d['apply_rot_embed'](tvm_q, tvm_k, tvm_freqs, tvm_outq, tvm_outk)
+    tvm_rope2d['apply_rot_embed'](tvm_q, tvm_freqs, tvm_outq)
+    np_outq = tvm_outq.numpy()
+
+    mad_freqs = np.mean(abs(pe_rope2d.freq.numpy() - freqs))
+    mad = np.mean(abs(np_outq - pt_q_rope.numpy()))
+    print(f"Mean-Absolute Difference Freqs for RoPE2D: {mad_freqs}")
+    print(f"Mean-Absolute Difference RoPE2D: {mad}")
 
 def test_embed(
     dim: int = 256, num_heads: int = 4,
