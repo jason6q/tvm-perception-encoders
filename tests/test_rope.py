@@ -85,9 +85,6 @@ def test_rope2d(
     tvm_rope2d['main'](tvm_q, tvm_freqs, tvm_outq)
     np_outq = tvm_outq.numpy()
 
-    # WARNING!!!! For whatever reason PyTorch is outputting lower precision.
-    # Could be due to CUDA Autocast?
-
     mad = np.mean(abs(np_outq - pt_q_rope.numpy()))
     print(f"Mean-Absolute Difference RoPE2D: {mad}")
 

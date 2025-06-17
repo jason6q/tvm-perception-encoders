@@ -6,6 +6,7 @@
 """
 from dataclasses import dataclass
 from typing import Union, List, Optional, Dict
+import math
 
 import tvm.relax.frontend.nn as nn
 from tvm.relax.frontend.nn import op as F
@@ -16,6 +17,36 @@ from tvm.script import ir as I
 @dataclass
 class SpatialPEConfig:
     test: int = None
+
+class AttentionPooling:
+    @T.prim_func
+    def main(
+        x: T.handle
+    ):
+        N = T.int32()
+
+"""
+    CDF of Gaussian Distribution with mean=0, std=1 :
+        0.5 * (1 + erf(x/sqrt(2)))
+
+    We're using the approximate formulation with tanh however. Hopefully this won't affect it too much.
+"""
+@I.ir_module
+class GeLU:
+    @T.prim_func
+    def main(
+        x: T.handle,
+        out_x: T.handle
+    ):
+        N, SEQ, WIDTH = T.int32(), T.int32(), T.int32()
+        X = T.match_buffer(x, [N, SEQ, WIDTH], "float32")
+        OUT_X = T.match_buffer(out_x, [N, SEQ, WIDTH], "float32")
+
+        for n, seq, w in T.grid(N, SEQ, WIDTH):
+            with T.block("gelu"):
+                vn, vs, vw = T.axis.remap("SSS", [n,seq,w])
+                pi = T.float32(math.pi)
+                OUT_X[vn, vs, vw] = 0.5 * X[vn, vs, vw] * ( 1 + T.tanh(T.sqrt(2/pi)*(X[vn,vs,vw] + 0.044715*T.pow(X[vn,vs,vw],3))))
 
 class RoPE2DSelfAttention:
     @T.prim_func
@@ -75,14 +106,6 @@ class NNLayerScale(nn.Module):
             },
         }
         return nn.spec.ModuleSpec.from_raw(mod_spec, self)
-
-#class TIRLayerScale(nn.Module):
-#    def __init__(self):
-#        pass
-
-class AttentionPooling(nn.Module):
-    def __init__(self):
-        super().__init__()
 
 class NNSelfAttention(nn.Module):
     """

@@ -4,29 +4,41 @@ sys.path.append('..')
 import torch
 import numpy as np
 import tvm
+import torch.nn.functional as F
 
-from core.vision_encoder.rope import Rope2D
-from core.vision_encoder.pe import SelfAttention
-from utils import get_devices, get_tensors, print_diff
+from pe import GeLU
 
-def test_self_attn(embed_dim=1024, num_heads=16):
-    device = 'cuda'
-    tvm_device, pt_device = get_devices(device)
+from utils import print_diff
 
-    # Build input
-    head_dim = embed_dim // num_heads
-    x = np.random.rand(1,32, embed_dim)
-    tvm_x, pt_x = get_tensors(x, device)
+def test_gelu():
+    np_x = np.random.uniform(size=(1,10,100)).astype("float32")
+    tvm_x, pt_x = tvm.nd.array(np_x), torch.from_numpy(np_x)
+    tvm_out = tvm.nd.array(np.zeros_like(np_x).astype("float32"))
 
-    # PyTorch
-    rope = Rope2D(embed_dim)
-    pt_self_attn = SelfAttention(embed_dim, num_heads, rope)
+    gelu = tvm.compile(GeLU, target="llvm")
 
-    # TVM
+    pt_out = F.gelu(pt_x)
+    gelu(tvm_x, tvm_out)
+    print_diff(pt_out.numpy(), tvm_out.numpy())
 
-
-    return
+#def test_self_attn(embed_dim=1024, num_heads=16):
+#    device = 'cuda'
+#    tvm_device, pt_device = get_devices(device)
+#
+#    # Build input
+#    head_dim = embed_dim // num_heads
+#    x = np.random.rand(1,32, embed_dim)
+#    tvm_x, pt_x = get_tensors(x, device)
+#
+#    # PyTorch
+#    rope = Rope2D(embed_dim)
+#    pt_self_attn = SelfAttention(embed_dim, num_heads, rope)
+#
+#    # TVM
+#
+#    return
 
     
 if __name__ == '__main__':
-    test_self_attn()
+    test_gelu()
+    #test_self_attn()
