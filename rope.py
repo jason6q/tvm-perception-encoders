@@ -94,8 +94,8 @@ class RoPE2D:
         for n, num_heads, seq_len, embed_dim in T.grid(N, NUM_HEADS, SEQ_LEN, HEAD_DIM // 2):
             with T.block("half_rotate"):
                 vn, vnh, vsl, ved = T.axis.remap("SSSS", [n, num_heads, seq_len, embed_dim])
-                ROT_E[vn, vnh, vsl, ved*2] = -E[vn, vnh, vsl, HEAD_DIM // 2 + ved]
-                ROT_E[vn, vnh, vsl, ved*2 + 1] = E[vn, vnh, vsl, ved]
+                ROT_E[vn, vnh, vsl, ved*2] = -E[vn, vnh, vsl, ved*2 + 1]
+                ROT_E[vn, vnh, vsl, ved*2 + 1] = E[vn, vnh, vsl, ved*2]
 
         # Freqs should already be aligned 1-d row major with Q and K
         for n, num_heads, seq_len, head_dim in T.grid(N, NUM_HEADS, SEQ_LEN, HEAD_DIM):

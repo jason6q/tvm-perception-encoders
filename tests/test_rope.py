@@ -77,7 +77,6 @@ def test_rope2d(
 
     # Calculate PyTorch RoPE2D
     pt_q_rope, pt_k_rope = pe_rope2d(pt_q, pt_k)
-    test_q = apply_rotary_emb(pe_rope2d.freq[:, None, :, :], pt_q)
 
     # Calculate TVM RoPE2D
     tvm_rope2d = tvm.compile(RoPE2D, target="llvm")
