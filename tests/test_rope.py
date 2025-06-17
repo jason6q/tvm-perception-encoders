@@ -82,10 +82,8 @@ def test_rope2d(
     tvm_rope2d = tvm.compile(RoPE2D, target="llvm")
     tvm_outq = tvm.nd.array(np.zeros_like(np_q).astype("float32"))
     tvm_outk = tvm.nd.array(np.zeros_like(np_k).astype("float32"))
-    tvm_rope2d['apply_rot_embed'](tvm_q, tvm_freqs, tvm_outq)
+    tvm_rope2d['main'](tvm_q, tvm_freqs, tvm_outq)
     np_outq = tvm_outq.numpy()
-
-    mad_freqs = np.mean(abs(pe_rope2d.freq.numpy() - freqs))
 
     # WARNING!!!! For whatever reason PyTorch is outputting lower precision.
     # Could be due to CUDA Autocast?

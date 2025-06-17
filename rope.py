@@ -80,7 +80,7 @@ class RoPE2D:
                 ROT_X[vn, vnh, vsl, ved*2 + 1] = X[vn, vnh, vsl, ved*2]
 
     @T.prim_func
-    def apply_rot_embed(
+    def main(
         embed: T.handle, freqs: T.handle, out_embed: T.handle):
         N, NUM_HEADS, SEQ_LEN, HEAD_DIM = T.int32(), T.int32(), T.int32(), T.int32()
         E = T.match_buffer(embed, [N, NUM_HEADS, SEQ_LEN, HEAD_DIM], "float32")
@@ -104,34 +104,6 @@ class RoPE2D:
                 vn, vnum_heads, vseq_len, vhead_dim = T.axis.remap("SSSS", [n, num_heads, seq_len, head_dim])
                 OUT_E[vn, vnum_heads, vseq_len, vhead_dim] = T.cos(FREQS[vn, vseq_len, vhead_dim]) * E[vn, vnum_heads, vseq_len, vhead_dim] \
                                                              + T.sin(FREQS[vn, vseq_len, vhead_dim]) * ROT_E[vn, vnum_heads, vseq_len, vhead_dim]
-
-    @T.prim_func
-    def main(
-        x: T.handle, freqs: T.handle, 
-        q_w: T.handle, q_b: T.handle, 
-        k_w: T.handle, k_b: T.handle,
-        v_w: T.handle, v_b: T.handle,
-        out: T.handle
-    ):
-        N, EMBED_DIM, SEQ = T.int32(), T.int32(), T.int32()
-        HEAD_DIM = T.int32()
-        X = T.match_buffer(x, [N, EMBED_DIM, SEQ], "float32")
-        FREQS = T.match_buffer(freqs, [N, SEQ, HEAD_DIM])
-
-        # We're packing the weights here.
-        QKV_W = T.match_buffer(q_w, [3*EMBED_DIM, EMBED_DIM], "float32")
-        QKV_B = T.match_buffer(q_b, [3*EMBED_DIM], "float32")
-        OUT = T.match_buffer(out, [], "float32")
-
-        Q = T.alloc_buffer([N,], "float32")
-        K = T.alloc_buffer([N,], "float32")
-        V = T.alloc_buffer([N,], "float32")
-
-        # Calculate Q, K
-
-        # Calculate Softmax Attention
-
-        # Calculate V
 
 def build_axial_freqs(
     head_dim: int, 

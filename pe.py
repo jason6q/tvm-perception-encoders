@@ -17,11 +17,34 @@ from tvm.script import ir as I
 class SpatialPEConfig:
     test: int = None
 
+class RoPE2DSelfAttention:
+    @T.prim_func
+    def main(
+        x: T.handle, freqs: T.handle, 
+        q_w: T.handle, q_b: T.handle, 
+        k_w: T.handle, k_b: T.handle,
+        v_w: T.handle, v_b: T.handle,
+        out: T.handle
+    ):
+        N, EMBED_DIM, SEQ = T.int32(), T.int32(), T.int32()
+        HEAD_DIM = T.int32()
+        X = T.match_buffer(x, [N, EMBED_DIM, SEQ], "float32")
+        FREQS = T.match_buffer(freqs, [N, SEQ, HEAD_DIM])
 
-#@I.ir_module
-#class TIRLayerScale:
-#    def __init__(self):
-#        pass
+        # We're packing the weights here.
+        QKV_W = T.match_buffer(q_w, [3*EMBED_DIM, EMBED_DIM], "float32")
+        QKV_B = T.match_buffer(q_b, [3*EMBED_DIM], "float32")
+        OUT = T.match_buffer(out, [], "float32")
+
+        Q = T.alloc_buffer([N,], "float32")
+        K = T.alloc_buffer([N,], "float32")
+        V = T.alloc_buffer([N,], "float32")
+
+        # Calculate Q, K
+
+        # Calculate Softmax Attention
+
+        # Calculate V
 
 class NNLayerScale(nn.Module):
     def __init__(
@@ -61,7 +84,7 @@ class AttentionPooling(nn.Module):
     def __init__(self):
         super().__init__()
 
-class SelfAttention(nn.Module):
+class NNSelfAttention(nn.Module):
     """
         PyTorch Reference: https://github.com/facebookresearch/perception_models/blob/main/core/vision_encoder/pe.py#L90
     """
