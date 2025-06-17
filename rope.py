@@ -76,8 +76,8 @@ class RoPE2D:
         for n, num_heads, seq_len, embed_dim in T.grid(N, NUM_HEADS, SEQ_LEN, HEAD_DIM // 2):
             with T.block("half_rotate"):
                 vn, vnh, vsl, ved = T.axis.remap("SSSS", [n, num_heads, seq_len, embed_dim])
-                ROT_X[vn, vnh, vsl, ved*2] = -X[vn, vnh, vsl, HEAD_DIM // 2 + ved]
-                ROT_X[vn, vnh, vsl, ved*2 + 1] = X[vn, vnh, vsl, ved]
+                ROT_X[vn, vnh, vsl, ved*2] = -X[vn, vnh, vsl, ved*2 + 1]
+                ROT_X[vn, vnh, vsl, ved*2 + 1] = X[vn, vnh, vsl, ved*2]
 
     @T.prim_func
     def apply_rot_embed(

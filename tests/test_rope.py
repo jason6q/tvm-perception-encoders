@@ -9,20 +9,27 @@ import numpy as np
 import core.vision_encoder.rope as pe_rope
 from rope import build_axial_freqs, ImagePatchEmbedding, RoPE2D
 
+from einops import rearrange, repeat
+
+torch.set_printoptions(precision=8)
+
 np.random.seed(42)
+def rotate_half(x):
+    x = rearrange(x, "... (d r) -> ... d r", r=2)
+    x1, x2 = x.unbind(dim=-1)
+    x = torch.stack((-x2, x1), dim=-1)
+    return rearrange(x, "... d r -> ... (d r)")
 
 def test_half_rotate():
     x = np.arange(100).reshape(1,1,1,-1).astype("float32")
-    tvm_x = tvm.nd.array(x)
+    tvm_x, pt_x = tvm.nd.array(x), torch.from_numpy(x)
     tvm_out = tvm.nd.array(np.zeros_like(x))
 
     tvm_rope2d = tvm.compile(RoPE2D, target="llvm")
     tvm_rope2d['half_rotate'](tvm_x, tvm_out)
 
-    # TODO: Compare...
-    print(tvm_out)
-
-    return
+    pt_out = rotate_half(pt_x)
+    print("Mean Absolute Difference of Half Rotate: ", (abs(pt_out.numpy() - tvm_out.numpy())).mean())
 
 def test_rope2d(
     batch: int = 1,
@@ -70,6 +77,7 @@ def test_rope2d(
 
     # Calculate PyTorch RoPE2D
     pt_q_rope, pt_k_rope = pe_rope2d(pt_q, pt_k)
+    test_q = apply_rotary_emb(pe_rope2d.freq[:, None, :, :], pt_q)
 
     # Calculate TVM RoPE2D
     tvm_rope2d = tvm.compile(RoPE2D, target="llvm")
@@ -79,8 +87,11 @@ def test_rope2d(
     np_outq = tvm_outq.numpy()
 
     mad_freqs = np.mean(abs(pe_rope2d.freq.numpy() - freqs))
+
+    # WARNING!!!! For whatever reason PyTorch is outputting lower precision.
+    # Could be due to CUDA Autocast?
+
     mad = np.mean(abs(np_outq - pt_q_rope.numpy()))
-    print(f"Mean-Absolute Difference Freqs for RoPE2D: {mad_freqs}")
     print(f"Mean-Absolute Difference RoPE2D: {mad}")
 
 def test_embed(
