@@ -1,16 +1,16 @@
-# TVM Perception Encoders
-Apache's TVM implementation of Meta's Perception Encoders. Simply to showcase how to convert a new model with the TVM framework the **HARD** way.
+# TVM Perception Encoders (WIP)
+Apache's TVM implementation of Meta's Perception Encoders. Most of it is written in TVScript with TensorIR. Not really using a lot of Relax methods here.
 
-Hopefully you can learn a thing or two! This will become a blog post later on. I chose to translate Perception Encoders because it's fairly recent as of the date of writing this and I read a lot of computer vision papers.
+I chose to translate Perception Encoders because it's fairly recent as of the date of writing this and I read a lot of computer vision papers.
 
-Only supported Spatial PE for now.
+**Only supporting Spatial PE for now.**
 
 ## Preliminary Knowledge.
 Before getting started it would be wise to have read the following pieces of ML literature:
 
-0. Perception Encoders
+0. [Perception Encoders](https://arxiv.org/pdf/2504.13181)
 1. Attention Is All You Need
-2. Rotary Positional Embeddings RoFormer
+2. Rotary Positional Embeddings RoFormer / RoPE 2D for Vision Transformers
 3. Auto-Tuning with XGBoost
 4. CUDA Threads, Blocks, Grids, Warps, etc...
 5. Optimization via Stochastic Scheduling
@@ -19,6 +19,8 @@ Before getting started it would be wise to have read the following pieces of ML 
 8. Accelerator Compilation.
 9. Metal (Apple) support.
 10. CLIP
+11. Vision Transformers
+12. [GeLU (Guassian Error Linear Units)](https://arxiv.org/pdf/1606.08415)
 
 ### Extra Knowledge
 Not necessary but it may fill some small gaps when implementing the architecture.
@@ -34,9 +36,12 @@ TODO: Include DrawIO graph.
 
 
 ## Setup
-When setting up a new conda environment; make sure you don't have any clashing variables in your system's environment.
+When setting up a new conda environment; make sure you don't have any clashing variables in your system's environment. We'll also have to clone the [perception_models](https://github.com/facebookresearch/perception_models) repository to validate that our translation is correct in `tests/`
 
 ```
+git clone https://github.com/facebookresearch/perception_models.git
+cd perception_models && pip install -e .
+
 conda create -n tvm-perception-encoders -c conda-forge \
     "llvmdev>=15" \
     "cmake>=3.24" \
@@ -58,8 +63,8 @@ chmod u+x build_tvm.sh
 
 Set a few conda specific environment variable to be able to load the source-built TVM package.
 ```
-conda env config vars set TVM_HOME=$(pwd)/tvm
-conda env config vars set PYTHONPATH=$(pwd)/tvm/python:$PYTHONPATH
+conda env config vars set TVM_HOME=$(pwd)/third-party/tvm
+conda env config vars set PYTHONPATH=$(pwd)/third-party/tvm/python:$PYTHONPATH
 conda deactivate
 conda activate tvm-perception-encoders
 cd tvm/python && pip install -e .
@@ -69,6 +74,10 @@ Download all the weights via `huggingface_hub`
 ```
 python download_weights.py --all
 ```
+
+### Compiling CPP Code
+This code is going to act as our front end to interface with the compiled model. We're doing this in CPP because typically edge-compute devices run on native code and the utility of TVM shines in these type of domains.
+
 
 ## Conversion to TVM
 We'll convert the model via the usage of Relax, Tensor Expression, and TIR in TVM.
@@ -89,6 +98,19 @@ Each of these modules may come with their own hidden set of obstacles and constr
 
 So, we'll implement each module in two ways. Leveraging the Relax NN Modules to the best of our capabilities and also a TIR version of it.
 
+## Profiling TensorRT vs TVM CUDA
+As a bonus lets do some profiling...
+
+
+## Tips:
+`R.call_dps_packed`
+- This will call a destination passing style primitive function. Make sure to understand that the final argument in a DPS primitive function is the output buffer. It follows this convention `prim_func(in0,..., inK, out)`. **It will automatically return that out buffer!** Therefore, in your Relax function you can simply do `lv0 = R.call_dps_packed(...)`
+
+## Custom Optimizations
+
+## Notes & Additional Materials
+Just a bunch of notes and other things used to get this going.
+
 ### Rotary Positional Embeddings
 The model makes use of RoPE so we'll have to get that implemented here. Refer to the [paper](https://arxiv.org/pdf/2104.09864) for an in depth understanding of how these positional embeddings work.
 
@@ -98,11 +120,3 @@ Used with the Residual Attention Blocks.
 ### Transformer
 
 ### Vision Transformer
-
-## Custom Optimizations
-
-## Profiling TensorRT vs TVM CUDA
-As a bonus lets do some profiling...
-
-## Compiling CPP Code
-This code is going to act as our front end to interface with the compiled model. We're doing this in CPP because typically edge-compute devices run on native code and the utility of TVM shines in these type of domains.
