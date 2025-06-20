@@ -8,9 +8,30 @@ I chose to translate Perception Encoders because it's fairly recent as of the da
 ## Preliminary Knowledge.
 Before getting started it would be wise to have read the following pieces of ML literature:
 
-0. [Perception Encoders](https://arxiv.org/pdf/2504.13181)
-1. Attention Is All You Need
-2. Rotary Positional Embeddings RoFormer / RoPE 2D for Vision Transformers
+### Model Architecture
+Papers to read related to the architecture of the model.
+- [Perception Encoders](https://arxiv.org/pdf/2504.13181)
+    - The main architecture we will be implementing
+- [GeLU (Guassian Error Linear Units)](https://arxiv.org/pdf/1606.08415)
+    - Main activation function used throughout.
+- [Attention Is All You Need](https://arxiv.org/pdf/1706.03762)
+    - Multi-head Self Attention
+- [RoFormer: Enhanced Transformer With Rotary Position Embedding](https://arxiv.org/pdf/2104.09864)
+    - One Dimensional Case for RoPE
+- [Rotary Positional Embedding for Vision Transformer](https://arxiv.org/pdf/2403.13298)
+    - Two Dimensional Case for RoPE
+- [CLIP: Learning Transferable Visual Models From Natural Language Supervision](https://arxiv.org/pdf/2103.00020)
+    - Pre-training method for embeddings using image and caption pairs.
+- [An Image Is Worth 16x16 Words: Transformers For Image Recognition At Scale](https://arxiv.org/pdf/2010.11929)
+    - Vision Transformer
+- [Attention Pooling]()
+    - Pool
+- [Going Deeper with Image Transformers](https://arxiv.org/pdf/2103.17239)
+    - Layer Scale Regularization during training.
+
+### Optimization
+Some optimization techniques to know what's happening under the hood with TVM.
+
 3. Auto-Tuning with XGBoost
 4. CUDA Threads, Blocks, Grids, Warps, etc...
 5. Optimization via Stochastic Scheduling
@@ -18,22 +39,6 @@ Before getting started it would be wise to have read the following pieces of ML 
 7. Operator Lowering
 8. Accelerator Compilation.
 9. Metal (Apple) support.
-10. CLIP
-11. Vision Transformers
-12. [GeLU (Guassian Error Linear Units)](https://arxiv.org/pdf/1606.08415)
-
-### Extra Knowledge
-Not necessary but it may fill some small gaps when implementing the architecture.
-
-Going Deeper with Image Transformers https://arxiv.org/pdf/2103.17239
-- Useful to know if you are wondering what that LayerScale module is for. It's a regularization technique during training. The gamma parameter that is learned during training is what is scaling it.
-
-Attention Pooling is taken from the CLIP Paper.
-
-
-## The Full Translated TVM Architecture
-TODO: Include DrawIO graph.
-
 
 ## Setup
 When setting up a new conda environment; make sure you don't have any clashing variables in your system's environment. We'll also have to clone the [perception_models](https://github.com/facebookresearch/perception_models) repository to validate that our translation is correct in `tests/`
