@@ -48,34 +48,42 @@ class GeLU:
                 pi = T.float32(math.pi)
                 OUT_X[vn, vs, vw] = 0.5 * X[vn, vs, vw] * ( 1 + T.tanh(T.sqrt(2/pi)*(X[vn,vs,vw] + 0.044715*T.pow(X[vn,vs,vw],3))))
 
-class RoPE2DSelfAttention:
+@I.ir_module
+class SelfAttention:
     @T.prim_func
-    def main(
-        x: T.handle, freqs: T.handle, 
-        q_w: T.handle, q_b: T.handle, 
-        k_w: T.handle, k_b: T.handle,
-        v_w: T.handle, v_b: T.handle,
+    def attn(
+        x: T.handle,
+        qkv_w: T.handle, qkv_b: T.handle,
         out: T.handle
     ):
-        N, EMBED_DIM, SEQ = T.int32(), T.int32(), T.int32()
-        HEAD_DIM = T.int32()
-        X = T.match_buffer(x, [N, EMBED_DIM, SEQ], "float32")
-        FREQS = T.match_buffer(freqs, [N, SEQ, HEAD_DIM])
+        N, NUM_HEADS, SEQ, HEAD_DIM, = T.int32(), T.int32(), T.int32(), T.int32()
+        WIDTH = T.int32()
 
-        # We're packing the weights here.
-        QKV_W = T.match_buffer(q_w, [3*EMBED_DIM, EMBED_DIM], "float32")
-        QKV_B = T.match_buffer(q_b, [3*EMBED_DIM], "float32")
-        OUT = T.match_buffer(out, [], "float32")
+        # We're assuming weights are packed here.
+        X = T.match_buffer(x, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
+        QKV_W = T.match_buffer(qkv_w, [3*WIDTH, WIDTH], "float32")
+        QKV_B = T.match_buffer(qkv_b, [3*WIDTH], "float32")
+        OUT_Q = T.alloc_buffer([N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
+        OUT_K = T.alloc_buffer([N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
+        OUT_V = T.alloc_buffer([N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
 
-        Q = T.alloc_buffer([N,], "float32")
-        K = T.alloc_buffer([N,], "float32")
-        V = T.alloc_buffer([N,], "float32")
+        # Maybe keep x packed as well?
+        for n, nh, s, hd in T.grid(N, NUM_HEADS, SEQ, HEAD_DIM):
+            with T.block('self_attn_qkv_out'):
+                vn, vnh, vs, vhd = T.axis.remap("SSSS", [n, nh, s, hd])
+                head_idx = 
+                OUT_Q[vn, vnh, vs, vhd] = QKV_W[0,] + QKV_B[0]
+                OUT_K[vn, vnh, vs, vhd] = QKV_W[1*WIDTH,] + QKV_B[1*WIDTH]
+                OUT_V[vn, vnh, vs, vhd] = QKV_W[2*WIDTH,] + QKV_B[2*WIDTH]
 
-        # Calculate Q, K
 
-        # Calculate Softmax Attention
-
-        # Calculate V
+#    @R.function
+#    def main(
+#        qkv_w: R.Tensor(), qkv_b: T.handle,
+#        out: T.handle
+#    ):
+#
+#        return
 
 class NNLayerScale(nn.Module):
     def __init__(
@@ -107,47 +115,47 @@ class NNLayerScale(nn.Module):
         }
         return nn.spec.ModuleSpec.from_raw(mod_spec, self)
 
-class NNSelfAttention(nn.Module):
-    """
-        PyTorch Reference: https://github.com/facebookresearch/perception_models/blob/main/core/vision_encoder/pe.py#L90
-    """
-    def __init__(
-        self, 
-        embed_dim: int,
-        num_heads: int,
-        # We Assume RoPE is in use from the pre-trained weights.
-        # rope: Optional[nn.Module] = None
-        ):
-        super().__init__()
-
-        # Calculate Self-Attention Dimensions.
-        self.embed_dim = embed_dim
-        self.num_heads = num_heads
-        self.head_dim = embed_dim // num_heads
-
-        # Create Non-Bounded Parameters for QKV weights/biases
-        # You could probably just store this as a regular Relax nn.Linear module as well.
-        #self.in_proj_weight = nn.Parameter([3 * embed_dim, embed_dim], "float32")
-        #self.in_proj_bias = nn.Parameter([3 * embed_dim], "float32")
-        self.in_proj = nn.Linear(embed_dim, embed_dim * 3, bias=True, dtype="float32", out_dtype="float32")
-        self.out_proj = nn.Linear(embed_dim * 3, embed_dim, bias=True, dtype="float32", out_dtype="float32")
-
-        self.scale = self.head_dim ** (-0.5) # Softmax scale, 1/sqrt(d_k); used for numerical stability when d_k is large.
-
-        self.attn = RoPE2DAttentionWithQKV
-
-    def forward(self, x: nn.Tensor, freqs: nn.Tensor):#, attn_mask: nn.Tensor):
-        # (embed_dim) -> (3 * embed_dim)
-        proj = self.in_proj(x)
-
-        # We'll want to break out the projections
-        # into QKV now and calculate the attention and score
-        # We'll use a custom TIR function that we wrote.
-        q, k, v = R.op.call_tir(self.attn['forward'], )
-
-        # We need to re-arrange QKV from B S (H D) -> B H S D (Einstein notation)
-
-        return q,k,v
+#class NNSelfAttention(nn.Module):
+#    """
+#        PyTorch Reference: https://github.com/facebookresearch/perception_models/blob/main/core/vision_encoder/pe.py#L90
+#    """
+#    def __init__(
+#        self, 
+#        embed_dim: int,
+#        num_heads: int,
+#        # We Assume RoPE is in use from the pre-trained weights.
+#        # rope: Optional[nn.Module] = None
+#        ):
+#        super().__init__()
+#
+#        # Calculate Self-Attention Dimensions.
+#        self.embed_dim = embed_dim
+#        self.num_heads = num_heads
+#        self.head_dim = embed_dim // num_heads
+#
+#        # Create Non-Bounded Parameters for QKV weights/biases
+#        # You could probably just store this as a regular Relax nn.Linear module as well.
+#        #self.in_proj_weight = nn.Parameter([3 * embed_dim, embed_dim], "float32")
+#        #self.in_proj_bias = nn.Parameter([3 * embed_dim], "float32")
+#        self.in_proj = nn.Linear(embed_dim, embed_dim * 3, bias=True, dtype="float32", out_dtype="float32")
+#        self.out_proj = nn.Linear(embed_dim * 3, embed_dim, bias=True, dtype="float32", out_dtype="float32")
+#
+#        self.scale = self.head_dim ** (-0.5) # Softmax scale, 1/sqrt(d_k); used for numerical stability when d_k is large.
+#
+#        self.attn = RoPE2DAttentionWithQKV
+#
+#    def forward(self, x: nn.Tensor, freqs: nn.Tensor):#, attn_mask: nn.Tensor):
+#        # (embed_dim) -> (3 * embed_dim)
+#        proj = self.in_proj(x)
+#
+#        # We'll want to break out the projections
+#        # into QKV now and calculate the attention and score
+#        # We'll use a custom TIR function that we wrote.
+#        q, k, v = R.op.call_tir(self.attn['forward'], )
+#
+#        # We need to re-arrange QKV from B S (H D) -> B H S D (Einstein notation)
+#
+#        return q,k,v
 
 
     def get_default_spec(self):
