@@ -71,19 +71,20 @@ class SelfAttention:
         for n, nh, s, hd in T.grid(N, NUM_HEADS, SEQ, HEAD_DIM):
             with T.block('self_attn_qkv_out'):
                 vn, vnh, vs, vhd = T.axis.remap("SSSS", [n, nh, s, hd])
-                head_idx = 
-                OUT_Q[vn, vnh, vs, vhd] = QKV_W[0,] + QKV_B[0]
-                OUT_K[vn, vnh, vs, vhd] = QKV_W[1*WIDTH,] + QKV_B[1*WIDTH]
-                OUT_V[vn, vnh, vs, vhd] = QKV_W[2*WIDTH,] + QKV_B[2*WIDTH]
+                #head_idx = 
+                #OUT_Q[vn, vnh, vs, vhd] = QKV_W[0,] + QKV_B[0]
+                #OUT_K[vn, vnh, vs, vhd] = QKV_W[1*WIDTH,] + QKV_B[1*WIDTH]
+                #OUT_V[vn, vnh, vs, vhd] = QKV_W[2*WIDTH,] + QKV_B[2*WIDTH]
 
 
-#    @R.function
-#    def main(
-#        qkv_w: R.Tensor(), qkv_b: T.handle,
-#        out: T.handle
-#    ):
-#
-#        return
+    @R.function
+    def main(
+        qkv_w: R.Tensor(("n",), dtype="float32"), 
+        qkv_b: R.Tensor(("n",), dtype="float32"),
+        out: R.Tensor(("n",), dtype="float32") 
+    ) -> R.Tensor(("n",), dtype="float32"):
+
+        return out
 
 class NNLayerScale(nn.Module):
     def __init__(
