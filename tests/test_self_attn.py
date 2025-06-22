@@ -20,16 +20,24 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     pt_rope.init_tensors()
     pt_rope.update_grid(DEVICE, grid_h, grid_w)
     pt_self_attn = SelfAttention(embed_dim=width, num_heads=num_heads, rope=pt_rope)
+    pt_self_attn.init_tensors()
 
     # Init TVM Self Attention
     tvm_self_attn = tvm.compile(TVMSelfAttention, target="llvm")
 
-
     # Init Input
     np_x = np.random.uniform(size=(1, SEQ_LEN, width)).astype("float32")
     tvm_x, pt_x = get_tensors(np_x)
+    tvm_qkv_w = tvm.nd.array(pt_self_attn.in_proj_weight.detach().numpy())
+    tvm_qkv_b = tvm.nd.array(pt_self_attn.in_proj_bias.detach().numpy())
+    tvm_linear_w = tvm.nd.array(pt_self_attn.out_proj.weight.detach().numpy())
+    tvm_linear_b = tvm.nd.array(pt_self_attn.out_proj.bias.detach().numpy())
 
+    # Infer
     pt_out = pt_self_attn(pt_x)
+
+    # Compare
+    tvm_self_attn['main'](tvm_x, tvm_qkv_w, tvm_qkv_b, tvm_linear_w, tvm_linear_b)
 
     return
 
