@@ -7,7 +7,8 @@ import torch.nn.functional as F
 import numpy as np
 
 import core.vision_encoder.rope as pe_rope
-from rope import build_axial_freqs, ImagePatchEmbedding, RoPE2D
+from rope import build_axial_freqs
+from tir_kernels.rope import image_patch_embed, half_rotate, apply_rope2d
 
 from einops import rearrange, repeat
 
@@ -25,8 +26,10 @@ def test_half_rotate():
     tvm_x, pt_x = tvm.nd.array(x), torch.from_numpy(x)
     tvm_out = tvm.nd.array(np.zeros_like(x))
 
-    tvm_rope2d = tvm.compile(RoPE2D, target="llvm")
-    tvm_rope2d['half_rotate'](tvm_x, tvm_out)
+    half_rotate_ir = tvm.IRModule({"half_rotate": half_rotate})
+    half_rotate_mod = tvm.build(half_rotate_ir, target="llvm")
+
+    half_rotate_mod(tvm_x, tvm_out)
 
     pt_out = rotate_half(pt_x)
     print("Mean Absolute Difference of Half Rotate: ", (abs(pt_out.numpy() - tvm_out.numpy())).mean())
@@ -45,10 +48,11 @@ def test_rope2d(
     np_img = np.random.uniform(size=(batch, 3,img_h,img_w)).astype("float32")
     tvm_img = tvm.nd.array(np_img)
 
-    img_embed = tvm.compile(ImagePatchEmbedding, target="llvm")
+    image_patch_embed_ir = tvm.IRModule({'image_patch_embed': image_patch_embed})
+    image_patch_embed_mod = tvm.build(image_patch_embed_ir, target="llvm")
     weights = tvm.nd.array(np.random.uniform(size=(width,3,patch_h, patch_w)).astype("float32"))
     out = tvm.nd.array(np.zeros((batch,width,seq), dtype="float32"))
-    img_embed(tvm_img, weights, out)
+    image_patch_embed_mod(tvm_img, weights, out)
 
     np_x, pt_x = out.numpy(), torch.tensor(out.numpy()) # [N, EMBED_DIM, SEQ]
     tvm_x = tvm.nd.array(np_x)
@@ -62,6 +66,7 @@ def test_rope2d(
 
     ## Test RoPE2D
     pe_rope2d = pe_rope.Rope2D(dim=dim_head)
+
     device = torch.device('cpu')
     pe_rope2d.init_tensors()
     pe_rope2d.update_grid(device, grid_h, grid_w)
@@ -79,10 +84,12 @@ def test_rope2d(
     pt_q_rope, pt_k_rope = pe_rope2d(pt_q, pt_k)
 
     # Calculate TVM RoPE2D
-    tvm_rope2d = tvm.compile(RoPE2D, target="llvm")
+    tvm_rope2d_ir = tvm.IRModule({'apply_rope2d': apply_rope2d})
+    tvm_rope2d_mod = tvm.build(tvm_rope2d_ir, target="llvm")
+
     tvm_outq = tvm.nd.array(np.zeros_like(np_q).astype("float32"))
     tvm_outk = tvm.nd.array(np.zeros_like(np_k).astype("float32"))
-    tvm_rope2d['main'](tvm_q, tvm_freqs, tvm_outq)
+    tvm_rope2d_mod(tvm_q, tvm_freqs, tvm_outq)
     np_outq = tvm_outq.numpy()
 
     mad = np.mean(abs(np_outq - pt_q_rope.numpy()))
@@ -106,12 +113,13 @@ def test_embed(
     print(f"Number of patches: {seq_num}")
 
     # Test projection
-    img_embed = tvm.compile(ImagePatchEmbedding, target="llvm")
+    image_patch_embed_ir = tvm.IRModule({'image_patch_embed': image_patch_embed})
+    image_patch_embed_mod = tvm.build(image_patch_embed_ir, target="llvm")
 
     img = tvm.nd.array(np.random.uniform(size=(1,3,img_h,img_w)).astype("float32"))
     weights = tvm.nd.array(np.random.uniform(size=(dim_head,3,patch_h, patch_w)).astype("float32"))
     out = tvm.nd.array(np.zeros((1,dim_head,grid_h*grid_w), dtype="float32"))
-    img_embed(img, weights, out)
+    image_patch_embed_mod(img, weights, out)
     out_pt = F.conv2d(torch.tensor(img.numpy()), torch.tensor(weights.numpy()), stride=(patch_h,patch_w))
     out_pt = out_pt.reshape(1,dim_head,grid_h*grid_w)
     print("PT Image Embedding Shape: ", out_pt.shape)
