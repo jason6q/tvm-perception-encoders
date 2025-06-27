@@ -6,93 +6,93 @@
 """
 from dataclasses import dataclass
 from typing import Union, List, Optional, Dict
-import math
 
-import tvm.relax.frontend.nn as nn
-from tvm.relax.frontend.nn import op as F
-from tvm.script import relax as R
-from tvm.script import tir as T
+import tvm
 from tvm.script import ir as I
+from tvm.script import tir as T
+from tvm.script import relax as R
+from tvm import relax
+
+from tir_kernels.self_attn import project_fused_qkv
 
 @dataclass
 class SpatialPEConfig:
     test: int = None
 
-@I.ir_module
-class AttentionPooling:
-    @T.prim_func
-    def main(
-        x: T.handle
-    ):
-        N = T.int32()
 
-"""
-    CDF of Gaussian Distribution with mean=0, std=1 :
-        0.5 * (1 + erf(x/sqrt(2)))
-
-    We're using the approximate formulation with tanh however. Hopefully this won't affect it too much.
-"""
-@I.ir_module
-class GeLU:
-    @T.prim_func
-    def main(
-        x: T.handle,
-        out_x: T.handle
-    ):
-        N, SEQ, WIDTH = T.int32(), T.int32(), T.int32()
-        X = T.match_buffer(x, [N, SEQ, WIDTH], "float32")
-        OUT_X = T.match_buffer(out_x, [N, SEQ, WIDTH], "float32")
-
-        for n, seq, w in T.grid(N, SEQ, WIDTH):
-            with T.block("gelu"):
-                vn, vs, vw = T.axis.remap("SSS", [n,seq,w])
-                pi = T.float32(math.pi)
-                OUT_X[vn, vs, vw] = 0.5 * X[vn, vs, vw] * ( 1 + T.tanh(T.sqrt(2/pi)*(X[vn,vs,vw] + 0.044715*T.pow(X[vn,vs,vw],3))))
-
-@I.ir_module
-class SelfAttention:
-    @T.prim_func
-    def project_fused_qkv(
-        x: T.handle,
-        qkv_w: T.handle, qkv_b: T.handle,
-        out_q: T.handle, out_k: T.handle, out_v: T.handle
-    ):
-        N, NUM_HEADS, SEQ, HEAD_DIM, = T.int32(), T.int32(), T.int32(), T.int32()
-        WIDTH = T.int32()
-
-        # We're assuming weights are packed here.
-        X = T.match_buffer(x, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
-        QKV_W = T.match_buffer(qkv_w, [3*WIDTH, WIDTH], "float32")
-        QKV_B = T.match_buffer(qkv_b, [3*WIDTH], "float32")
-        OUT_Q = T.match_buffer(out_q, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
-        OUT_K = T.match_buffer(out_k, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
-        OUT_V = T.match_buffer(out_v, [N, NUM_HEADS, SEQ, HEAD_DIM], "float32")
-
-        # Maybe keep x packed as well?
-        for n, nh, s, hd in T.grid(N, NUM_HEADS, SEQ, HEAD_DIM):
-            with T.block('self_attn_qkv_out'):
-                vn, vnh, vs, vhd = T.axis.remap("SSSS", [n, nh, s, hd])
-                #head_idx = 
-                #OUT_Q[vn, vnh, vs, vhd] = QKV_W[0,] + QKV_B[0]
-                #OUT_K[vn, vnh, vs, vhd] = QKV_W[1*WIDTH,] + QKV_B[1*WIDTH]
-                #OUT_V[vn, vnh, vs, vhd] = QKV_W[2*WIDTH,] + QKV_B[2*WIDTH]
-    #@T.prim_func
-    #def sdpa(q: T.handle, k: T.handle, v: T.handle):
-    #    N = T.int32()
-    #    return q
-
-    @R.function
-    def main(
-        x: R.Tensor(("n","num_heads", "seq", "head_dim"), dtype="float32"),
-        qkv_w: R.Tensor((3*"width", "width"), dtype="float32"), 
-        qkv_b: R.Tensor((3*"width",), dtype="float32"),
-        linear_w: R.Tensor(("width", "width"), dtype="float32"),
-        linear_b: R.Tensor(("width", "width"), dtype="float32"),
-        out: R.Tensor(("n",), dtype="float32") 
-    ) -> R.Tensor(("n",), dtype="float32"):
-
-        # Calculate Q, K, V
-
-        # Apply RoPE2D to Q and K
-
-        return out
+#def build_self_attn():
+#    # TODO: Try out BlockBuilder instead. This is rediculous.
+#    # Define Symbolic shapes
+#    n, seq, width = tir.Var("n", "int64"), tir.Var("seq", "int64"), tir.Var("width", "int64")
+#    num_heads = tir.Var("num_heads", "int64")
+#
+#    # Function inputs using symbolic shapes
+#    x = R.Var("x", R.TensorStructInfo((n,seq,width), "float32"))
+#    qkv_w = R.Var("qkv_w", R.TensorStructInfo((3 * width, width), "float32"))
+#    qkv_b = R.Var("qkv_b", R.TensorStructInfo((3 * width,), "float32"))
+#    linear_w = R.Var("linear_w", R.TensorStructInfo((width,), "float32"))
+#    linear_b = R.Var("linear_b", R.TensorStructInfo((width,), "float32"))
+#
+#    # Calculate Q, K, V
+#    mod = IRModule()
+#    mod["project_fused_qkv"] = project_fused_qkv
+#    gv_qkv = mod.get_global_var("project_fused_qkv")
+#
+#    attn_call = R.call_tir(
+#        gv_qkv,
+#        (n, seq, width, x, qkv_w, qkv_b),
+#        out_sinfo=[
+#            R.TensorStructInfo((n,seq,width), "float32"),
+#            R.TensorStructInfo((n,seq,width), "float32"),
+#            R.TensorStructInfo((n,seq,width), "float32")
+#        ]
+#    )
+#    #out_q = R.TupleGetItem(qkv, 0)
+#
+#    #out_k = R.TupleGetItem(qkv, 1)
+#    #out_v = R.TupleGetItem(qkv, 2)
+#
+#    attn_fn = R.Function(
+#        params=[x, qkv_w, qkv_b],
+#        body = attn_call,
+#        ret_struct_info=R.TupleStructInfo([
+#            R.TensorStructInfo((n,seq,width), "float32"),
+#            R.TensorStructInfo((n,seq,width), "float32"),
+#            R.TensorStructInfo((n,seq,width), "float32")
+#        ])
+#    )
+#
+#    mod["self_attn"] = attn_fn
+#    return mod
+#
+##class SelfAttention:
+##
+##    @R.Function
+##    def main(
+##        x: R.Tensor(("n","seq", "width"), dtype="float32"),
+##        qkv_w: R.Tensor(("3 * width", "width"), dtype="float32"), 
+##        qkv_b: R.Tensor(("3 * width",), dtype="float32"),
+##        linear_w: R.Tensor(("width", "width"), dtype="float32"),
+##        linear_b: R.Tensor(("width",), dtype="float32"),
+##        num_heads: R.Tensor((), "int32"),
+##    ) -> R.Tensor(("n", "seq", "width"), dtype="float32"):
+##        #n = R.Var("n", shape=(), dtype="int32")
+##        #seq = R.Var("seq", shape=(), dtype="int32")
+##        #width = R.Var("width", shape=(), dtype="int32")
+##        n,seq,width = T.var("int64"), T.var("int64"), T.var("int64")
+##        R.match_shape(x,(n,seq,width))
+##
+##
+##        # Apply RoPE2D to Q and K
+##
+##        # SDPA
+##        #sdpa_res = R.call_tir(
+##        #    SelfAttention,sdpa,
+##        #    (out_q,out_k,out_v),
+##        #    out_sinfo=[
+##        #        R.Tensor((n, seq, width), "float32")
+##        #    ]
+##        #)
+##
+##        # Linear
+##        return x
