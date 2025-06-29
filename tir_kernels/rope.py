@@ -53,6 +53,10 @@ def half_rotate(x: T.handle, rot_x: T.handle):
             ROT_X[vn, vnh, vsl, ved*2] = -X[vn, vnh, vsl, ved*2 + 1]
             ROT_X[vn, vnh, vsl, ved*2 + 1] = X[vn, vnh, vsl, ved*2]
 
+"""
+    This one assumes your QKV values aren't fused... So you would have to already
+    have your embeddings be (N,H,S,D//H)
+"""
 @T.prim_func
 def apply_rope2d(
     embed: T.handle, freqs: T.handle, out_embed: T.handle):
@@ -78,3 +82,10 @@ def apply_rope2d(
             vn, vnum_heads, vseq_len, vhead_dim = T.axis.remap("SSSS", [n, num_heads, seq_len, head_dim])
             OUT_E[vn, vnum_heads, vseq_len, vhead_dim] = T.cos(FREQS[vn, vseq_len, vhead_dim]) * E[vn, vnum_heads, vseq_len, vhead_dim] \
                                                             + T.sin(FREQS[vn, vseq_len, vhead_dim]) * ROT_E[vn, vnum_heads, vseq_len, vhead_dim]
+
+@T.prim_func
+def apply_fused_rope2d(embed: T.handle, freqs: T.handle, out_embed: T.handle, num_heads: T.int32):
+    N,SEQ,WIDTH,H = T.int32(), T.int32(), T.int32(), T.int32()
+    EMBED = T.match_buffer(embed, [N,SEQ,WIDTH], "float32")
+    FREQS = T.match_buffer(freqs, [N,SEQ,H], "float32")
+    OUT_EMBED = T.match_buffer(out_embed, [N,SEQ,WIDTH], "float32")
