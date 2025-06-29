@@ -82,10 +82,20 @@ def apply_rope2d(
             vn, vnum_heads, vseq_len, vhead_dim = T.axis.remap("SSSS", [n, num_heads, seq_len, head_dim])
             OUT_E[vn, vnum_heads, vseq_len, vhead_dim] = T.cos(FREQS[vn, vseq_len, vhead_dim]) * E[vn, vnum_heads, vseq_len, vhead_dim] \
                                                             + T.sin(FREQS[vn, vseq_len, vhead_dim]) * ROT_E[vn, vnum_heads, vseq_len, vhead_dim]
-
+"""
+    This is applying RoPE2D to an input of shape (N, SEQ, WIDTH).
+    This will also fuse the half rotate operation.
+"""
 @T.prim_func
 def apply_fused_rope2d(embed: T.handle, freqs: T.handle, out_embed: T.handle, num_heads: T.int32):
     N,SEQ,WIDTH,H = T.int32(), T.int32(), T.int32(), T.int32()
     EMBED = T.match_buffer(embed, [N,SEQ,WIDTH], "float32")
     FREQS = T.match_buffer(freqs, [N,SEQ,H], "float32")
     OUT_EMBED = T.match_buffer(out_embed, [N,SEQ,WIDTH], "float32")
+
+    for n, seq, width in T.grid(N, SEQ, WIDTH):
+        with T.block("fused_rope2d"):
+            vn, vseq, vwidth = T.axis.remap("SSS", [n, seq, width])
+            OUT_EMBED[vn, vseq, vwidth] = T.cos(FREQS[vn,vseq, vwidth % num_heads]) * EMBED[vn, vseq, vwidth]
+            OUT_EMBED[vn, vseq, vwidth] += T.sin(FREQS[vn, seq, vwidth % num_heads]) * \
+                ((vwidth % 2)*EMBED[vn, vseq, vwidth] - (1 - (width % 2)*EMBED[vn,vseq,vwidth + 1]))
