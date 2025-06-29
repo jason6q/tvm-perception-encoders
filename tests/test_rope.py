@@ -8,7 +8,7 @@ import numpy as np
 
 import core.vision_encoder.rope as pe_rope
 from rope import build_axial_freqs
-from tir_kernels.rope import image_patch_embed, half_rotate, apply_rope2d
+from tir_kernels.rope import image_patch_embed, half_rotate, apply_rope2d, apply_fused_rope2d
 
 from einops import rearrange, repeat
 
@@ -94,6 +94,19 @@ def test_rope2d(
 
     mad = np.mean(abs(np_outq - pt_q_rope.numpy()))
     print(f"Mean-Absolute Difference RoPE2D: {mad}")
+
+    # Calculate TVM Fused RoPE2D
+    tvm_fused_rope2d_ir = tvm.IRModule({'apply_fused_rope2d': apply_fused_rope2d})
+    tvm_fused_rope2d_mod = tvm.build(tvm_fused_rope2d_ir, target="llvm")
+    np_q = np_q.reshape((batch,seq,num_heads*dim_head))
+    tvm_q = tvm.nd.array(np_q.astype("float32"))
+    tvm_outq = tvm.nd.array(np.zeros_like(np_q).astype("float32"))
+    tvm_fused_rope2d_mod(tvm_q, freqs, tvm_outq, num_heads)
+    np_outq = tvm_outq.numpy().reshape((batch,num_heads,seq,dim_head))
+
+    mad = np.mean(abs(np_outq - pt_q_rope.numpy()))
+    print(f"Mean-Absolute Difference Fused RoPE2D: {mad}")
+
 
 def test_embed(
     dim: int = 256, num_heads: int = 4,
