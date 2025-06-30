@@ -114,12 +114,6 @@ def test_rope2d(
     mad = np.mean(abs(np_outq - pt_q_rope.numpy()))
     print(f"Mean-Absolute Difference Fused RoPE2D: {mad}")
 
-    seq_idx = 0
-    head_idx = 1
-    true_outq = pt_q_rope.numpy()
-    print("TVM", np_outq[0,head_idx,seq_idx,:])
-    print("PYTORCH", true_outq[0,head_idx,seq_idx,:])
-
 def test_embed(
     dim: int = 256, num_heads: int = 4,
     grid_w: int = 64, grid_h: int = 32,
