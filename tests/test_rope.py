@@ -70,9 +70,14 @@ def test_rope2d(
     device = torch.device('cpu')
     pe_rope2d.init_tensors()
     pe_rope2d.update_grid(device, grid_h, grid_w)
-    np_q = np.random.uniform(size=(batch,num_heads, seq, dim_head)).astype("float32")
+    np_q = np.arange(batch*num_heads*seq*dim_head)
+    np_q = (np_q.reshape((batch,num_heads,seq,dim_head)) / np_q.max()).astype("float32")
+    #np_q = np.random.uniform(size=(batch,num_heads, seq, dim_head)).astype("float32")
+
     pt_q, tvm_q = torch.tensor(np_q), tvm.nd.array(np_q)
-    np_k = np.random.uniform(size=(batch,num_heads,seq, dim_head)).astype("float32")
+    #np_k = np.random.uniform(size=(batch,num_heads,seq, dim_head)).astype("float32")
+    np_k = np.arange(batch*num_heads*seq*dim_head)
+    np_k = (np_q.reshape((batch,num_heads,seq,dim_head)) / np_k.max()).astype("float32")
     pt_k, tvm_k = torch.tensor(np_k), tvm.nd.array(np_k)
     print("Q Shape: ", np_q.shape)
     print("K Shape: ", np_k.shape)
@@ -98,15 +103,22 @@ def test_rope2d(
     # Calculate TVM Fused RoPE2D
     tvm_fused_rope2d_ir = tvm.IRModule({'apply_fused_rope2d': apply_fused_rope2d})
     tvm_fused_rope2d_mod = tvm.build(tvm_fused_rope2d_ir, target="llvm")
-    np_q = np_q.reshape((batch,seq,num_heads*dim_head))
-    tvm_q = tvm.nd.array(np_q.astype("float32"))
-    tvm_outq = tvm.nd.array(np.zeros_like(np_q).astype("float32"))
-    tvm_fused_rope2d_mod(tvm_q, freqs, tvm_outq, num_heads)
-    np_outq = tvm_outq.numpy().reshape((batch,num_heads,seq,dim_head))
+
+    np_q_permuted = np_q.transpose((0,2,1,3)).reshape((batch,seq,num_heads*dim_head))
+    tvm_q = tvm.nd.array(np_q_permuted.astype("float32"))
+    tvm_outq = tvm.nd.array(np.zeros_like(np_q_permuted).astype("float32"))
+    tvm_fused_rope2d_mod(tvm_q, freqs, tvm_outq)
+
+    np_outq = tvm_outq.numpy().reshape((batch,seq,num_heads,dim_head)).transpose((0,2,1,3))
 
     mad = np.mean(abs(np_outq - pt_q_rope.numpy()))
     print(f"Mean-Absolute Difference Fused RoPE2D: {mad}")
 
+    seq_idx = 0
+    head_idx = 1
+    true_outq = pt_q_rope.numpy()
+    print("TVM", np_outq[0,head_idx,seq_idx,:])
+    print("PYTORCH", true_outq[0,head_idx,seq_idx,:])
 
 def test_embed(
     dim: int = 256, num_heads: int = 4,
