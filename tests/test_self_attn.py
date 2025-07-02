@@ -5,11 +5,12 @@ import torch
 import numpy as np
 import tvm
 import torch.nn.functional as F
-from core.vision_encoder.pe import SelfAttention
+from core.vision_encoder.pe import SelfAttention 
 from core.vision_encoder.rope import Rope2D
 
-from tir_kernels import self_attn
 from utils import print_diff, get_tensors
+from pe import bb_self_attn
+from rope import build_axial_freqs
 
 def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     DEVICE = 'cpu'
@@ -25,8 +26,10 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     # Init TVM Self Attention
     #self_attn_ir = bb_self_attn()
     #self_attn_ir = build_self_attn()
-    #ex = tvm.relax.build(self_attn_ir, target='llvm')
-    #tvm_self_attn = tvm.relax.VirtualMachine(ex, device=tvm.cpu())
+
+    mod = bb_self_attn()
+    ex = tvm.relax.build(mod, target='llvm')
+    tvm_self_attn = tvm.relax.VirtualMachine(ex, device=tvm.cpu())
     #self_attn_ir = tvm.compile(TVMSelfAttention, target="llvm")
 
     # Init Input
@@ -42,10 +45,16 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     # Infer
     pt_out = pt_self_attn(pt_x)
 
+    freqs = build_axial_freqs(dim_head, grid_h, grid_w).astype("float32")
+    tvm_freqs = tvm.nd.array(freqs)
+    print("Frequency Shape: ", freqs.shape)
+    tvm_self_attn['self_attn'](
+        tvm_x, tvm_qkv_w, tvm_qkv_b, tvm_linear_w, tvm_linear_b, tvm_freqs)
+
     # Compare
 
 
-    #tvm_self_attn['main'](tvm_x, tvm_qkv_w, tvm_qkv_b, tvm_linear_w, tvm_linear_b, 
+    # tvm_self_attn['main'](tvm_x, tvm_qkv_w, tvm_qkv_b, tvm_linear_w, tvm_linear_b, 
     #    tvm.nd.array(np.array(num_heads, dtype="int32")))
 
     return
