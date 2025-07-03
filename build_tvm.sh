@@ -1,7 +1,7 @@
 #!/bin/bash
 # See reference: https://tvm.apache.org/docs/install/from_source.html
 if [ ! -d tvm ]; then
-  git clone --recursive https://github.com/apache/tvm tvm
+  git clone --recursive https://github.com/apache/tvm third-party/tvm
 fi
 cd tvm && rm -rf build && mkdir build && cd build
 cp ../cmake/config.cmake .

@@ -45,14 +45,12 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     # Infer
     pt_out = pt_self_attn(pt_x)
 
-    freqs = build_axial_freqs(dim_head, grid_h, grid_w).astype("float32")
+    freqs = build_axial_freqs(width // num_heads, grid_h, grid_w).astype("float32")
+    print(freqs.shape)
     tvm_freqs = tvm.nd.array(freqs)
     print("Frequency Shape: ", freqs.shape)
-    tvm_self_attn['self_attn'](
+    out = tvm_self_attn['self_attn'](
         tvm_x, tvm_qkv_w, tvm_qkv_b, tvm_linear_w, tvm_linear_b, tvm_freqs)
-
-    # Compare
-
 
     # tvm_self_attn['main'](tvm_x, tvm_qkv_w, tvm_qkv_b, tvm_linear_w, tvm_linear_b, 
     #    tvm.nd.array(np.array(num_heads, dtype="int32")))

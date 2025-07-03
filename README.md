@@ -1,5 +1,5 @@
 # TVM Perception Encoders (WIP)
-Apache's TVM implementation of Meta's Perception Encoders. Most of it is written in TVScript with TensorIR. Not really using a lot of Relax methods here.
+Apache's TVM implementation of Meta's Perception Encoders. Most of it is written in TVMScript with TensorIR. Not really using a lot of Relax methods here.
 
 I chose to translate Perception Encoders because it's fairly recent as of the date of writing this and I read a lot of computer vision papers.
 
@@ -32,9 +32,10 @@ Papers to read related to the architecture of the model.
 ### Optimization
 Some optimization techniques to know what's happening under the hood with TVM.
 
-3. Auto-Tuning with XGBoost
+- [Scheduling with TVM]()
+    - Automatically via meta-schedule like using XGBoost to search kernel space.
+    - Stochastic scheduling to random search kernel space
 4. CUDA Threads, Blocks, Grids, Warps, etc...
-5. Optimization via Stochastic Scheduling
 6. Operator Fusion / Decomposition
 7. Operator Lowering
 8. Accelerator Compilation.
@@ -105,7 +106,6 @@ So, we'll implement each module in two ways. Leveraging the Relax NN Modules to 
 
 ## Profiling TensorRT vs TVM CUDA
 As a bonus lets do some profiling...
-
 
 ## Tips:
 `R.call_dps_packed`
