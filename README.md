@@ -35,11 +35,14 @@ Some optimization techniques to know what's happening under the hood with TVM.
 - [Scheduling with TVM]()
     - Automatically via meta-schedule like using XGBoost to search kernel space.
     - Stochastic scheduling to random search kernel space
-4. CUDA Threads, Blocks, Grids, Warps, etc...
-6. Operator Fusion / Decomposition
-7. Operator Lowering
-8. Accelerator Compilation.
-9. Metal (Apple) support.
+
+- [Flash Attention](https://arxiv.org/pdf/2205.14135)
+    - Look into the [Online Normalizer calculation for softmax](https://arxiv.org/pdf/1805.02867)
+- CUDA Threads, Blocks, Grids, Warps, etc...
+- Operator Fusion / Decomposition
+- Operator Lowering
+- Accelerator Compilation.
+- Metal (Apple) support.
 
 ## Setup
 When setting up a new conda environment; make sure you don't have any clashing variables in your system's environment. We'll also have to clone the [perception_models](https://github.com/facebookresearch/perception_models) repository to validate that our translation is correct in `tests/`
@@ -83,45 +86,3 @@ python download_weights.py --all
 
 ### Compiling CPP Code
 This code is going to act as our front end to interface with the compiled model. We're doing this in CPP because typically edge-compute devices run on native code and the utility of TVM shines in these type of domains.
-
-
-## Conversion to TVM
-We'll convert the model via the usage of Relax, Tensor Expression, and TIR in TVM.
-
-The modules we'll create will be based off the official PyTorch code located here:
-https://github.com/facebookresearch/perception_models/blob/main/core/vision_encoder/pe.py
-
-We'll need to implement these 6 main modules in order to be able to have a working perception encoder for spatial predictions.
-
-1. LayerScale
-2. AttentionPooling
-3. SelfAttention
-4. ResidualAttentionBlock
-5. Transformer
-6. VisionTransformer
-
-Each of these modules may come with their own hidden set of obstacles and constraints. You would hope that the translation be seamless between PyTorch's NN module to TVM's Relax NN module; but that usually isn't the case. We will have to resort going into Tensor Expression or TIR to accomplish some of the necessary translations. Or we can go use them for fun because kernel code is fascinating in TIR to leverage some XGBoost optimizations.
-
-So, we'll implement each module in two ways. Leveraging the Relax NN Modules to the best of our capabilities and also a TIR version of it.
-
-## Profiling TensorRT vs TVM CUDA
-As a bonus lets do some profiling...
-
-## Tips:
-`R.call_dps_packed`
-- This will call a destination passing style primitive function. Make sure to understand that the final argument in a DPS primitive function is the output buffer. It follows this convention `prim_func(in0,..., inK, out)`. **It will automatically return that out buffer!** Therefore, in your Relax function you can simply do `lv0 = R.call_dps_packed(...)`
-
-## Custom Optimizations
-
-## Notes & Additional Materials
-Just a bunch of notes and other things used to get this going.
-
-### Rotary Positional Embeddings
-The model makes use of RoPE so we'll have to get that implemented here. Refer to the [paper](https://arxiv.org/pdf/2104.09864) for an in depth understanding of how these positional embeddings work.
-
-### Layer Scale
-Used with the Residual Attention Blocks.
-
-### Transformer
-
-### Vision Transformer
