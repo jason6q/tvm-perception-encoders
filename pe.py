@@ -13,7 +13,7 @@ from tvm.script import tir as T
 from tvm.script import relax as R
 from tvm import relax
 
-from tir_kernels.self_attn import project_fused_qkv, fused_sdpa
+from tir_kernels.self_attn import project_fused_qkv, fused_sdpa, project_score
 from tir_kernels.rope import apply_fused_rope2d
 
 @dataclass
@@ -77,7 +77,16 @@ def bb_self_attn():
             ))
 
             ## Apply linear projection
+            project_score_gv = bb.add_func(project_score, "project_score")
+            out = bb.emit(relax.call_tir(
+                project_score_gv,
+                args=[score, linear_w, linear_b],
+                out_sinfo=[
+                    R.Tensor(("n", "seq", "width"), "float32")
+                ]
+            ))
+            bb.emit_output(out)
 
-        bb.emit_func_output(qkv_res)
+        bb.emit_func_output(out)
     mod = bb.get()
     return mod
