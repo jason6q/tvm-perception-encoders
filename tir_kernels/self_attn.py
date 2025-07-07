@@ -4,34 +4,68 @@ from tvm.script import relax as R
 
 """
     Basic Scalar Dot Product Attention operating on
-    fused heads
+    fused heads with online safe softmax calculation
 """
 
+
+"""
+    Assume that that weights are already transposed.
+"""
 @T.prim_func
-def project_score(s: T.handle, linear_w: T.handle, linear_b: T.handle, out: T.handle):
-    return
+def project_score(score: T.handle, linear_w: T.handle, linear_b: T.handle, out: T.handle):
+    n, seq, width = T.int32(), T.int32(), T.int32()
+
+    SCORE = T.match_buffer(score, (n,seq,width), "float32")
+    OUT = T.match_buffer(out, (n,seq,width), "float32")
+    LINEAR_W = T.match_buffer(linear_w, (width,width), "float32")
+    LINEAR_B = T.match_buffer(linear_b, (width,), "float32") # mimic broadcasting in Pytorch (N,S,W) + (W)
+
+    for _n, s, w in T.grid(n, seq, width):
+        with T.block("project_score"):
+            vn,vs,vw = T.axis.remap("SSS", [_n,s,w])
+            with T.init():
+                OUT[vn, vs,vw] = T.float32(0)
+            P = T.alloc_buffer((1,), dtype="float32")
+            P[0] = 0
+            for k in T.serial(0,width):
+                P[0] += SCORE[vn,vs,k] * LINEAR_W[vw,k] # Linear_w is not transposed. So row-wise multiplying
+            OUT[vn,vs,vw] = P[0] + LINEAR_B[vw]
 
 @T.prim_func
 def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, num_heads: T.int32, score: T.handle):
     n, seq, width = T.int32(), T.int32(), T.int32()
-    Q = T.match_buffer((n, seq, width), "float32")
-    K = T.match_buffer((n, seq, width), "float32")
-    V = T.match_buffer((n, seq, width), "float32")
-    SCORE = T.match_buffer((n, seq, width), "float32")
+    Q = T.match_buffer(q, (n, seq, width), "float32")
+    K = T.match_buffer(k, (n, seq, width), "float32")
+    V = T.match_buffer(v, (n, seq, width), "float32")
+    SCORE = T.match_buffer(score, (n, seq, width), "float32")
 
-    # SDPA per head.
-    # TODO: Add Fast Attention ONLINE Softmax calc?
-    for _n, s, w in T.grid(n,seq, width):
-        with T.block("fused_sdpa_qk"):
-            vn, vs, vw = T.axis.remap("SSS", [_n, s, w])
-            with T.init():
-                SCORE[vn, vs, vw] = T.float32(0)
+    QK_OUT = T.alloc_buffer((n,num_heads,seq,seq), "float32")
+    MAXS = T.alloc_buffer((n,num_heads,seq), "float32")
+    NORMALIZERS = T.alloc_buffer((n, num_heads, seq), "float32")
 
-            # Calc dot products.
-            # This is a row-wise dot product.
-            for k in range(w // num_heads):
-                SCORE[vn, vs, vw] += Q[n, vs, k] * K[n, vs, k] / math.sqrt
-            
+    ## Calculate QK^T w/ online softmax?
+    ## We'll have to split each head out of w
+    #head_dim = width // num_heads
+    #for _n, h, s1,s2 in T.grid(n,num_heads, seq, seq):
+    #    with T.block("fused_sdpa_qk"):
+    #        vn, vh, vs1, vs2 = T.axis.remap("SSS", [_n, h,s1,s2])
+    #        with T.init():
+    #            QK_OUT[vn, vh, vs1, vs2] = T.float32(0)
+
+    #        # Calc dot products.
+    #        # This is a row-wise dot product (Because we assume k isn't transposed.)
+    #        for k in range(head_dim):
+    #            QK_OUT[vn, h, s1, s2] += Q[n, s1, head_dim*h + k] * K[n, s2, head_dim*h + k] 
+
+    ## Use an Online Safe Softmax Calculation to remove
+    ## coupling. from Softmax(QK^T)
+    ## Calculate Row Max
+    ## Calculate Normalizer
+    ## Calculate Score output
+    #for _n, s, w in T.grid(n,seq,width):
+    #    with T.block("fused_softmax_qkv"):
+    #        vn, vs, vw = T.axis.remap("SSS", [_n,s,w])
+
 
 """
     This just projects X into the Q,K,V space.

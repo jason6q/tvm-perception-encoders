@@ -12,6 +12,29 @@ from utils import print_diff, get_tensors
 from pe import bb_self_attn
 from rope import build_axial_freqs
 
+from tir_kernels.self_attn import project_score
+
+def test_project_score(width=1532, seq=1024):
+    np_score = np.random.uniform(size=(1, seq, width)).astype("float32")
+    np_linear_w = np.random.uniform(size=(width,width)).astype("float32")
+    np_linear_b = np.ones((width,)).astype("float32") * 2
+    tvm_score, pt_score = get_tensors(np_score)
+    tvm_linear_w, pt_linear_w = get_tensors(np_linear_w)
+    tvm_linear_b, pt_linear_b = get_tensors(np_linear_b)
+    tvm_linear_out = tvm.nd.array(np.zeros_like(np_score).astype("float32"))
+
+    tvm_project_score_mod = tvm.IRModule({'project_score': project_score})
+    tvm_project_score = tvm.build(tvm_project_score_mod, target="llvm")
+    print(tvm_project_score_mod.script())
+
+    # Compare
+    pt_out = F.linear(pt_score, pt_linear_w, pt_linear_b)
+    tvm_project_score(tvm_score, tvm_linear_w, tvm_linear_b, tvm_linear_out)
+
+    print(pt_out)
+    print(tvm_linear_out, tvm_linear_out.shape)
+    print_diff(pt_out.numpy(), tvm_linear_out.numpy())
+
 def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     DEVICE = 'cpu'
     SEQ_LEN =  grid_h*grid_w
@@ -58,4 +81,5 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     return
     
 if __name__ == '__main__':
-    test_self_attn()
+    #test_self_attn()
+    test_project_score()
