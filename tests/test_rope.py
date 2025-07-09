@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-import core.vision_encoder.rope as pe_rope
+import perception_models.core.vision_encoder.rope as pe_rope
 from rope import build_axial_freqs
 from tir_kernels.rope import image_patch_embed, half_rotate, apply_rope2d, apply_fused_rope2d
 

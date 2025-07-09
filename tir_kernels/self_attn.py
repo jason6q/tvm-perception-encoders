@@ -43,16 +43,16 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, num_heads: T.int32, score
 
     ## Calculate QK^T w/ online softmax?
     ## We'll have to split each head out of w
-    for _n, h, s1,s2 in T.grid(n, num_heads, seq, seq):
+    for _n, h, s1, s2 in T.grid(n, num_heads, seq, seq):
         with T.block("fused_sdpa_qk"):
-            vn, vh, vs1, vs2 = T.axis.remap("SSS", [_n, h,s1,s2])
+            vn, vh, vs1, vs2 = T.axis.remap("SSSS", [_n, h, s1,s2])
             with T.init():
                 QK_OUT[vn, vh, vs1, vs2] = T.float32(0)
 
             # Calc dot products.
             # This is a row-wise dot product (Because we assume k isn't transposed.)
             for k in T.serial(0, width // num_heads):
-                QK_OUT[vn, h, s1, s2] += Q[n, s1, (width//num_heads)*h + k] * K[n, s2, (width//num_heads)*h + k] 
+                QK_OUT[vn, vh, vs1, vs2] += Q[vn, vs1, (width//num_heads)*vh + k] * K[vn, vs2, (width//num_heads)*vh + k] 
 
     ## Use an Safe Softmax Calculation to remove
     ## This is a CPU implementation.
@@ -61,24 +61,18 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, num_heads: T.int32, score
         with T.block("fused_softmax_qkv"):
             vn, vh, vs = T.axis.remap("SSS", [_n,h,s])
 
-            # Calculate Row Max and Normalizer
-            #M = T.alloc_buffer((1,), dtype="float32")
-            #M[0] = 0
-            #D = T.alloc_buffer((1,), dtype="float32")
-            #D[0] = T.float32("-inf")
-
             M_prev = T.float32(0)
             D_prev = T.float32("-inf")
 
-            for k in T.spatial(1, seq):
-                M_k = max(M_prev, QK_OUT[vn, vh, vs, k])
+            for k in range(1, seq):
+                M_k = T.max(M_prev, QK_OUT[vn, vh, vs, k])
                 D_k = D_prev * T.exp(M_prev - M_k) + T.exp(QK_OUT[vn,vh,vs,k] - M_k)
                 M_prev = M_k
                 D_prev = D_k
 
             # Calculate Softmax
-            for k in T.spatial(0, seq):
-                SCORE[_n, s, h*(width // num_heads) + k] = T.exp(QK_OUT[vn,vh,vs,k]) / D_prev
+            for k in range(0, seq):
+                SCORE[vn, vs, vh*(width // num_heads) + k] = T.exp(QK_OUT[vn,vh,vs,k]) / D_prev
 
 """
     This just projects X into the Q,K,V space.
