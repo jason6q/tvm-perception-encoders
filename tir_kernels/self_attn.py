@@ -40,32 +40,45 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, num_heads: T.int32, score
     SCORE = T.match_buffer(score, (n, seq, width), "float32")
 
     QK_OUT = T.alloc_buffer((n,num_heads,seq,seq), "float32")
-    MAXS = T.alloc_buffer((n,num_heads,seq), "float32")
-    NORMALIZERS = T.alloc_buffer((n, num_heads, seq), "float32")
 
     ## Calculate QK^T w/ online softmax?
     ## We'll have to split each head out of w
-    #head_dim = width // num_heads
-    #for _n, h, s1,s2 in T.grid(n,num_heads, seq, seq):
-    #    with T.block("fused_sdpa_qk"):
-    #        vn, vh, vs1, vs2 = T.axis.remap("SSS", [_n, h,s1,s2])
-    #        with T.init():
-    #            QK_OUT[vn, vh, vs1, vs2] = T.float32(0)
+    for _n, h, s1,s2 in T.grid(n, num_heads, seq, seq):
+        with T.block("fused_sdpa_qk"):
+            vn, vh, vs1, vs2 = T.axis.remap("SSS", [_n, h,s1,s2])
+            with T.init():
+                QK_OUT[vn, vh, vs1, vs2] = T.float32(0)
 
-    #        # Calc dot products.
-    #        # This is a row-wise dot product (Because we assume k isn't transposed.)
-    #        for k in range(head_dim):
-    #            QK_OUT[vn, h, s1, s2] += Q[n, s1, head_dim*h + k] * K[n, s2, head_dim*h + k] 
+            # Calc dot products.
+            # This is a row-wise dot product (Because we assume k isn't transposed.)
+            for k in T.serial(0, width // num_heads):
+                QK_OUT[vn, h, s1, s2] += Q[n, s1, (width//num_heads)*h + k] * K[n, s2, (width//num_heads)*h + k] 
 
-    ## Use an Online Safe Softmax Calculation to remove
-    ## coupling. from Softmax(QK^T)
-    ## Calculate Row Max
-    ## Calculate Normalizer
-    ## Calculate Score output
-    #for _n, s, w in T.grid(n,seq,width):
-    #    with T.block("fused_softmax_qkv"):
-    #        vn, vs, vw = T.axis.remap("SSS", [_n,s,w])
+    ## Use an Safe Softmax Calculation to remove
+    ## This is a CPU implementation.
+    ## TODO: Do Parallel Equivalent.
+    for _n, h, s in T.grid(n,num_heads, seq):
+        with T.block("fused_softmax_qkv"):
+            vn, vh, vs = T.axis.remap("SSS", [_n,h,s])
 
+            # Calculate Row Max and Normalizer
+            #M = T.alloc_buffer((1,), dtype="float32")
+            #M[0] = 0
+            #D = T.alloc_buffer((1,), dtype="float32")
+            #D[0] = T.float32("-inf")
+
+            M_prev = T.float32(0)
+            D_prev = T.float32("-inf")
+
+            for k in T.spatial(1, seq):
+                M_k = max(M_prev, QK_OUT[vn, vh, vs, k])
+                D_k = D_prev * T.exp(M_prev - M_k) + T.exp(QK_OUT[vn,vh,vs,k] - M_k)
+                M_prev = M_k
+                D_prev = D_k
+
+            # Calculate Softmax
+            for k in T.spatial(0, seq):
+                SCORE[_n, s, h*(width // num_heads) + k] = T.exp(QK_OUT[vn,vh,vs,k]) / D_prev
 
 """
     This just projects X into the Q,K,V space.
