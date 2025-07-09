@@ -37,12 +37,11 @@ Some optimization techniques to know what's happening under the hood with TVM.
     - Stochastic scheduling to random search kernel space
 
 - [Flash Attention](https://arxiv.org/pdf/2205.14135)
-    - Look into the [Online Normalizer calculation for softmax](https://arxiv.org/pdf/1805.02867)
+    - Look into the [Online Normalizer calculation for softmax](https://arxiv.org/pdf/1805.02867).
+    - [Safe Softmax numerical computation](https://www.deeplearningbook.org/contents/numerical.html) in the deep learning book.
 - CUDA Threads, Blocks, Grids, Warps, etc...
 - Operator Fusion / Decomposition
 - Operator Lowering
-- Accelerator Compilation.
-- Metal (Apple) support.
 
 ## Setup
 When setting up a new conda environment; make sure you don't have any clashing variables in your system's environment. We'll also have to clone the [perception_models](https://github.com/facebookresearch/perception_models) repository to validate that our translation is correct in `tests/`
