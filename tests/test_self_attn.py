@@ -14,26 +14,36 @@ from rope import build_axial_freqs
 
 from tir_kernels.self_attn import project_score, fused_sdpa
 
-def test_sdpa(width=1532, seq=1024, num_heads=16):
+def test_sdpa(width=1536, seq=1024, num_heads=16):
     head_dim = width // num_heads
+
+    # fused_sdpa takes in a flattened shape.
     np_q = np.random.uniform(size=(1, num_heads, seq, head_dim))
-    tvm_q, pt_q = get_tensors(np_q)
+    pt_q = torch.Tensor(np_q)
+    tvm_q = torch.Tensor(np_q.transpose(0,2,1,3).reshape(1,seq,width))
 
     np_k = np.random.uniform(size=(1, num_heads, seq, head_dim))
-    tvm_k, pt_k = get_tensors(np_k)
+    pt_k = torch.Tensor(np_k)
+    tvm_k = torch.Tensor(np_k.transpose(0,2,1,3).reshape(1,seq,width))
 
     np_v = np.random.uniform(size=(1, num_heads, seq, head_dim))
-    tvm_v, pt_v = get_tensors(np_k)
+    pt_v = torch.Tensor(np_v)
+    tvm_v = torch.Tensor(np_v.transpose(0,2,1,3).reshape(1,seq,width))
 
     np_score = np.zeros_like(np_q)
-    tvm_score, pt_score = get_tensors(np_score)
+    tvm_score = torch.Tensor(np_score.transpose(0,2,1,3).reshape(1,seq,width))
 
     pt_sdpa_out = F.scaled_dot_product_attention(pt_q, pt_k, pt_v)
-    print(pt_sdpa_out)
 
+    fused_sdpa_mod = tvm.IRModule({'fused_sdpa': fused_sdpa})
+    tvm_fused_sdpa = tvm.build(fused_sdpa_mod, target="llvm")
+
+    tvm_fused_sdpa(tvm_q, tvm_k, tvm_v, num_heads, tvm_score)
+    tvm_score = tvm_score.numpy().reshape(1,seq,num_heads,head_dim).transpose(0,2,1,3)
+    print_diff(pt_sdpa_out.numpy(), tvm_score)
     return
 
-def test_project_score(width=1532, seq=1024):
+def test_project_score(width=1536, seq=1024):
     np_score = np.random.uniform(size=(1, seq, width)).astype("float32")
     np_linear_w = np.random.uniform(size=(width,width)).astype("float32")
     np_linear_b = np.ones((width,)).astype("float32") * 2
