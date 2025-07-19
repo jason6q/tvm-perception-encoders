@@ -1,5 +1,7 @@
-# TVM Perception Encoders (WIP)
-Apache's TVM implementation of Meta's Perception Encoders. Most of it is written in TVMScript with TensorIR. Not really using a lot of Relax methods here.
+# TVM Perception Encoders (Work In Progress - VERY ROUGH, Incomplete!!!)
+Apache's TVM implementation of Meta's Perception Encoders. Most of it is written in TVMScript using TIR. Minimizing usage of Relax here; apart from using its block builders to create modules.
+
+**TODO**: Get full inference working, optimize, add scheduling logic and CUDA support.
 
 I chose to translate Perception Encoders because it's fairly recent as of the date of writing this and I read a lot of computer vision papers.
 
@@ -24,8 +26,6 @@ Papers to read related to the architecture of the model.
     - Pre-training method for embeddings using image and caption pairs.
 - [An Image Is Worth 16x16 Words: Transformers For Image Recognition At Scale](https://arxiv.org/pdf/2010.11929)
     - Vision Transformer
-- [Attention Pooling]()
-    - Pool
 - [Going Deeper with Image Transformers](https://arxiv.org/pdf/2103.17239)
     - Layer Scale Regularization during training.
 
@@ -58,6 +58,7 @@ conda create -n tvm-perception-encoders -c conda-forge \
 
 conda activate tvm-perception-encoders
 pip install -e .
+sudo apt install mypy
 ```
 **NOTE: TVM does not support python 3.12 so we'll use 3.11 for now**
 
@@ -85,3 +86,9 @@ python download_weights.py --all
 
 ### Compiling CPP Code
 This code is going to act as our front end to interface with the compiled model. We're doing this in CPP because typically edge-compute devices run on native code and the utility of TVM shines in these type of domains.
+
+TODO
+
+### Scheduling 
+
+TODO
