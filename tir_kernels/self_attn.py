@@ -37,9 +37,13 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, num_heads: T.int32, score
     Q = T.match_buffer(q, (n, seq, width), "float32")
     K = T.match_buffer(k, (n, seq, width), "float32")
     V = T.match_buffer(v, (n, seq, width), "float32")
-    SCORE = T.match_buffer(score, (n, seq, width), "float32")
+    SCORE_OUT = T.match_buffer(score, (n, seq, width), "float32")
 
-    QK_OUT = T.alloc_buffer((n,num_heads,seq,seq), "float32")
+    QK = T.alloc_buffer((n,num_heads,seq,seq), "float32")
+    SOFT = T.alloc_buffer((n,num_heads,seq,seq), "float32")
+
+    M = T.alloc_buffer((seq,), "float32")
+    D = T.alloc_buffer((seq,), "float32")
 
     ## Calculate QK^T w/ online softmax?
     ## We'll have to split each head out of w
@@ -47,12 +51,13 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, num_heads: T.int32, score
         with T.block("fused_sdpa_qk"):
             vn, vh, vs1, vs2 = T.axis.remap("SSSS", [_n, h, s1,s2])
             with T.init():
-                QK_OUT[vn, vh, vs1, vs2] = T.float32(0)
+                QK[vn, vh, vs1, vs2] = T.float32(0)
 
             # Calc dot products.
             # This is a row-wise dot product (Because we assume k isn't transposed.)
+            head_dim = width // num_heads
             for k in T.serial(0, width // num_heads):
-                QK_OUT[vn, vh, vs1, vs2] += Q[vn, vs1, (width//num_heads)*vh + k] * K[vn, vs2, (width//num_heads)*vh + k] 
+                QK[vn, vh, vs1, vs2] += Q[vn, vs1, head_dim*vh + k] * K[vn, vs2, head_dim*vh + k] / T.sqrt(T.float32(head_dim))
 
     ## Use an Safe Softmax Calculation to remove
     ## This is a CPU implementation.
@@ -61,18 +66,31 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, num_heads: T.int32, score
         with T.block("fused_softmax_qkv"):
             vn, vh, vs = T.axis.remap("SSS", [_n,h,s])
 
-            M_prev = T.float32(0)
-            D_prev = T.float32("-inf")
+            with T.init():
+                M[0] = QK[vn, vh, vs, 0]
+                D[0] = T.float32(1)   
 
-            for k in range(1, seq):
-                M_k = T.max(M_prev, QK_OUT[vn, vh, vs, k])
-                D_k = D_prev * T.exp(M_prev - M_k) + T.exp(QK_OUT[vn,vh,vs,k] - M_k)
-                M_prev = M_k
-                D_prev = D_k
+            for k in range(seq):
+                x_k = QK[vn, vh, vs, k + 1]
+                M[k] = T.max(M[k-1], x_k)
+                D[k] = D[k-1] * T.exp(M[k-1] - M[k]) + T.exp(x_k - M[k])
 
             # Calculate Softmax
-            for k in range(0, seq):
-                SCORE[vn, vs, vh*(width // num_heads) + k] = T.exp(QK_OUT[vn,vh,vs,k]) / D_prev
+            # D_prev is the final accumulated normalizer.
+            for k in range(seq):
+                SOFT[vn, vh, vs, k] = T.exp(QK[vn,vh,vs,k]) / D[seq-1]
+
+    ## Score calculation
+    for _n, s, w in T.grid(n, seq, width):
+        with T.block("fused_score"):
+            vn, vs, vw = T.axis.remap("SSS", [_n,s,w])
+
+            with T.init():
+                SCORE_OUT[vn,vs,vw] = T.float32(0)
+
+            head_dim = width // num_heads
+            for k in range(seq):
+                SCORE_OUT[vn, vs, vw] += SOFT[vn, vw // head_dim, vs, k] * V[vn, k, vw] 
 
 """
     This just projects X into the Q,K,V space.
