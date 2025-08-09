@@ -33,6 +33,7 @@ def test_sdpa(width=1536, seq=1024, num_heads=16):
     np_score = np.zeros_like(np_q)
     tvm_score = torch.Tensor(np_score.transpose(0,2,1,3).reshape(1,seq,width))
 
+    # This already expects the tensors to be Q,K, V
     pt_sdpa_out = F.scaled_dot_product_attention(pt_q, pt_k, pt_v)
 
     fused_sdpa_mod = tvm.IRModule({'fused_sdpa': fused_sdpa})
@@ -110,6 +111,6 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     return
     
 if __name__ == '__main__':
-    test_project_score()
     test_sdpa()
+    test_project_score()
     #test_self_attn()

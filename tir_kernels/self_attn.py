@@ -42,9 +42,6 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, num_heads: T.int32, score
     QK = T.alloc_buffer((n,num_heads,seq,seq), "float32")
     SOFT = T.alloc_buffer((n,num_heads,seq,seq), "float32")
 
-    M = T.alloc_buffer((seq,), "float32")
-    D = T.alloc_buffer((seq,), "float32")
-
     ## Calculate QK^T w/ online softmax?
     ## We'll have to split each head out of w
     for _n, h, s1, s2 in T.grid(n, num_heads, seq, seq):
@@ -66,19 +63,24 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, num_heads: T.int32, score
         with T.block("fused_softmax_qkv"):
             vn, vh, vs = T.axis.remap("SSS", [_n,h,s])
 
-            with T.init():
-                M[0] = QK[vn, vh, vs, 0]
-                D[0] = T.float32(1)   
+            # We have to allocate the buffer here, if it were just
+            # a regular variable it will not change within the for loop block.
+            M_prev = T.alloc_buffer((), "float32")
+            D_prev = T.alloc_buffer((), "float32")
 
-            for k in range(seq):
-                x_k = QK[vn, vh, vs, k + 1]
-                M[k] = T.max(M[k-1], x_k)
-                D[k] = D[k-1] * T.exp(M[k-1] - M[k]) + T.exp(x_k - M[k])
+            # init
+            M_prev[()] = T.min_value("float32")
+            D_prev[()] = T.float32(0)
+            for k in range(seq):               # <-- min=0 OK
+                x = QK[vn, vh, vs, k]
+                M_k = T.max(M_prev[()], x)
+                D_prev[()] = D_prev[()] * T.exp(M_prev[()] - M_k) + T.exp(x - M_k)
+                M_prev[()] = M_k
 
             # Calculate Softmax
             # D_prev is the final accumulated normalizer.
             for k in range(seq):
-                SOFT[vn, vh, vs, k] = T.exp(QK[vn,vh,vs,k]) / D[seq-1]
+                SOFT[vn, vh, vs, k] = T.exp(QK[vn,vh,vs,k] - M_prev[()]) / D_prev[()]
 
     ## Score calculation
     for _n, s, w in T.grid(n, seq, width):
