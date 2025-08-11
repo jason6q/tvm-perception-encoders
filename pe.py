@@ -36,6 +36,7 @@ def bb_self_attn():
     freqs = relax.Var("freqs", R.Tensor((1, seq, dim_head), "float32"))
 
     with bb.function("self_attn", [x, qkv_w, qkv_b, linear_w, linear_b, freqs]):
+        # Get Q,K,V values 
         with bb.dataflow():
             project_fused_qkv_gv = bb.add_func(project_fused_qkv, "project_fused_qkv")
             # Calculate QKV
@@ -52,11 +53,13 @@ def bb_self_attn():
             )
             bb.emit_output(qkv_res)
 
+        # Apply RoPE2D to Q,K,V
         with bb.dataflow():
             q,k,v = qkv_res[0], qkv_res[1], qkv_res[2]
 
             # Apply RoPE2D
             apply_rope2d_gv = bb.add_func(apply_fused_rope2d, "apply_rope2d")
+            # TODO: Consider packing Q,K,V back into a 3*width tensor.
             q = bb.emit(relax.call_tir(apply_rope2d_gv, args=[q,freqs],out_sinfo=[R.Tensor((n,seq,width),"float32")]))
             k = bb.emit(relax.call_tir(apply_rope2d_gv, args=[k,freqs],out_sinfo=[R.Tensor((n,seq,width),"float32")]))
             v = bb.emit(relax.call_tir(apply_rope2d_gv, args=[v,freqs],out_sinfo=[R.Tensor((n,seq,width),"float32")]))
@@ -65,6 +68,8 @@ def bb_self_attn():
             bb.emit_output(k)
             bb.emit_output(v)
 
+        # Scalar Dot Product Attention
+        # Softmax(QK^T/sqrt(dim_head))*V
         with bb.dataflow():
             # Apply Scalar Dot Product
             sdpa_gv = bb.add_func(fused_sdpa, "fused_sdpa")
@@ -77,6 +82,7 @@ def bb_self_attn():
             ))
 
             ## Apply linear projection
+            # Embed all the heads into one embedding using a linear projection
             project_score_gv = bb.add_func(project_score, "project_score")
             out = bb.emit(relax.call_tir(
                 project_score_gv,

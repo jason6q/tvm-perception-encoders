@@ -2,3 +2,4 @@ __pycache__/
 tvm/
 *.egg-info/
 perception_models/
+notes/
