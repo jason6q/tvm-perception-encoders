@@ -36,6 +36,10 @@ def mse(x: np.ndarray, y: np.ndarray) -> float:
     """
     return ((x - y)**2).mean()
 
+def rel_diff(x: np.ndarray, y:np.ndarray) -> float:
+
+    return
+
 def print_diff(x: np.ndarray, y: np.ndarray):
     """
         Just print all the different metrics

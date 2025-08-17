@@ -1,7 +1,10 @@
 # TVM Perception Encoders (Work In Progress - VERY ROUGH, Incomplete!!!)
 Apache's TVM implementation of Meta's Perception Encoders. Most of it is written in TVMScript using TIR. Minimizing usage of Relax here; apart from using its block builders to create modules.
 
-**TODO**: Get full inference working, optimize, add scheduling logic and CUDA support.
+**TODO**: 
+1. Get full inference working
+2. Optimize code, right now the functions are pretty slow. TIR Kernels are just naive implementations.
+3. add scheduling logic for CPU and CUDA support.
 
 I chose to translate Perception Encoders because it's fairly recent as of the date of writing this and I read a lot of computer vision papers.
 

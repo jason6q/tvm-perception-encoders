@@ -43,7 +43,7 @@ def bb_self_attn():
             qkv_res = bb.emit(
                 relax.call_tir(
                     project_fused_qkv_gv,
-                    args=[n, seq, width, x, qkv_w, qkv_b],
+                    args=[x, qkv_w, qkv_b],
                     out_sinfo=[
                         R.Tensor((n,seq,width), "float32"),
                         R.Tensor((n,seq,width), "float32"),
@@ -75,9 +75,9 @@ def bb_self_attn():
             sdpa_gv = bb.add_func(fused_sdpa, "fused_sdpa")
             score = bb.emit(relax.call_tir(
                 sdpa_gv,
-                args=[q, k, v, width // dim_head],
+                args=[q, k, v, dim_head],
                 out_sinfo=[
-                    R.Tensor(("n", "seq" "width"), "float32")
+                    R.Tensor((n,seq,width), "float32")
                 ]
             ))
 
@@ -88,7 +88,7 @@ def bb_self_attn():
                 project_score_gv,
                 args=[score, linear_w, linear_b],
                 out_sinfo=[
-                    R.Tensor(("n", "seq", "width"), "float32")
+                    R.Tensor((n,seq,width), "float32")
                 ]
             ))
             bb.emit_output(out)

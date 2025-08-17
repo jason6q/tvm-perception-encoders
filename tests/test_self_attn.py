@@ -12,7 +12,40 @@ from utils import print_diff, get_tensors
 from pe import bb_self_attn
 from rope import build_axial_freqs
 
-from tir_kernels.self_attn import project_score, fused_sdpa
+from tir_kernels.self_attn import project_score, fused_sdpa, project_fused_qkv
+
+def test_qkv_project(width=1536, seq=1024, num_heads=16):
+    np_x = np.random.uniform(size=(1, seq, width)).astype("float32")
+    np_linear_w = np.random.uniform(size=(3*width,width)).astype("float32")
+    np_linear_b = np.ones((3*width,)).astype("float32") * 2
+
+    tvm_x, pt_x = get_tensors(np_x)
+    tvm_linear_w, pt_linear_w = get_tensors(np_linear_w)
+    tvm_linear_b, pt_linear_b = get_tensors(np_linear_b)
+    tvm_q_out = tvm.nd.array(np.zeros_like(np_x).astype("float32"))
+    tvm_k_out = tvm.nd.array(np.zeros_like(np_x).astype("float32"))
+    tvm_v_out = tvm.nd.array(np.zeros_like(np_x).astype("float32"))
+
+    tvm_project_qkv_mod = tvm.IRModule({'project_fused_qkv': project_fused_qkv})
+    tvm_project_qkv = tvm.build(tvm_project_qkv_mod, target="llvm")
+
+    # Compare
+    pt_out = F.linear(pt_x, pt_linear_w, pt_linear_b)
+    proj = (
+        pt_out.unflatten(-1, (3, width))
+        .unsqueeze(0)
+        .transpose(0, -2)
+        .squeeze(-2)
+        .contiguous()
+    )
+    pt_q, pt_k, pt_v = proj[0], proj[1], proj[2]
+    tvm_project_qkv(tvm_x, tvm_linear_w, tvm_linear_b, tvm_q_out, tvm_k_out, tvm_v_out)
+
+    #print(pt_out)
+    #print(tvm_linear_out, tvm_linear_out.shape)
+    print_diff(pt_q.numpy(), tvm_q_out.numpy())
+    print_diff(pt_k.numpy(), tvm_k_out.numpy())
+    print_diff(pt_v.numpy(), tvm_v_out.numpy())
 
 def test_sdpa(width=1536, seq=1024, num_heads=16):
     head_dim = width // num_heads
@@ -73,17 +106,13 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     pt_rope = Rope2D(width // num_heads)
     pt_rope.init_tensors()
     pt_rope.update_grid(DEVICE, grid_h, grid_w)
-    pt_self_attn = SelfAttention(embed_dim=width, num_heads=num_heads, rope=pt_rope)
+    pt_self_attn = SelfAttention(embed_dim=width, num_heads=num_heads, rope=pt_rope).eval()
     pt_self_attn.init_tensors()
 
     # Init TVM Self Attention
-    #self_attn_ir = bb_self_attn()
-    #self_attn_ir = build_self_attn()
-
-    #mod = bb_self_attn()
-    #ex = tvm.relax.build(mod, target='llvm')
-    #tvm_self_attn = tvm.relax.VirtualMachine(ex, device=tvm.cpu())
-    #self_attn_ir = tvm.compile(TVMSelfAttention, target="llvm")
+    mod = bb_self_attn()
+    ex = tvm.relax.build(mod, target='llvm')
+    tvm_self_attn = tvm.relax.VirtualMachine(ex, device=tvm.cpu())
 
     # Init Input
     # NOTE: If doing RoPE2D, will have to reformat to [b s (h d)].
@@ -93,24 +122,19 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     tvm_qkv_b = tvm.nd.array(pt_self_attn.in_proj_bias.detach().numpy())
     tvm_linear_w = tvm.nd.array(pt_self_attn.out_proj.weight.detach().numpy())
     tvm_linear_b = tvm.nd.array(pt_self_attn.out_proj.bias.detach().numpy())
-    tvm_out = tvm.nd.array(np.zeros_like(np_x).astype("float32"))
 
     # Infer
-    pt_out = pt_self_attn(pt_x)
+    with torch.no_grad():
+        pt_out = pt_self_attn(pt_x)
 
-    #freqs = build_axial_freqs(width // num_heads, grid_h, grid_w).astype("float32")
-    #print(freqs.shape)
-    #tvm_freqs = tvm.nd.array(freqs)
-    #print("Frequency Shape: ", freqs.shape)
-    #out = tvm_self_attn['self_attn'](
-    #    tvm_x, tvm_qkv_w, tvm_qkv_b, tvm_linear_w, tvm_linear_b, tvm_freqs)
-
-    # tvm_self_attn['main'](tvm_x, tvm_qkv_w, tvm_qkv_b, tvm_linear_w, tvm_linear_b, 
-    #    tvm.nd.array(np.array(num_heads, dtype="int32")))
-
-    return
+    freqs = build_axial_freqs(width // num_heads, grid_h, grid_w).astype("float32")
+    tvm_freqs = tvm.nd.array(freqs)
+    tvm_out = tvm_self_attn['self_attn'](
+        tvm_x, tvm_qkv_w, tvm_qkv_b, tvm_linear_w, tvm_linear_b, tvm_freqs)
+    print_diff(pt_out.numpy(), tvm_out.numpy())
     
 if __name__ == '__main__':
+    test_qkv_project()
     test_sdpa()
     test_project_score()
-    #test_self_attn()
+    test_self_attn()
