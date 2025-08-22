@@ -28,7 +28,7 @@ def mad(x: np.ndarray, y: np.ndarray) -> float:
     """
         Mean Absolute Difference
     """
-    return abs(x - y).mean()
+    return np.abs(x - y).mean()
 
 def mse(x: np.ndarray, y: np.ndarray) -> float:
     """
