@@ -1,18 +1,88 @@
 import sys
 sys.path.append('..')
+from typing import Optional
 
 import torch
+from torch import nn
+from torch.nn import Parameter
+from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
 import numpy as np
 import tvm
 import torch.nn.functional as F
-from core.vision_encoder.pe import SelfAttention 
 from core.vision_encoder.rope import Rope2D
+from einops import rearrange
 
 from utils import print_diff, get_tensors
 from pe import bb_self_attn
 from rope import build_axial_freqs
 
 from tir_kernels.self_attn import project_score, fused_sdpa, project_fused_qkv
+
+#torch.manual_seed(42)
+#np.random.seed(42)
+
+class SelfAttention(nn.Module):
+    r"""
+    Implements sequence packed attention and RoPe
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        rope: Optional[nn.Module] = None,
+    ):
+        super(SelfAttention, self).__init__()
+        self.embed_dim = embed_dim
+
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        assert (
+            self.head_dim * num_heads == self.embed_dim
+        ), "embed_dim must be divisible by num_heads"
+
+        # To make this compatibile with nn.MultiHeadAttention
+        self.in_proj_weight = Parameter(torch.empty(3 * embed_dim, embed_dim))
+        self.in_proj_bias = Parameter(torch.empty(3 * embed_dim))
+        self.out_proj = nn.Linear(embed_dim, embed_dim, bias=True)
+
+        self.rope = rope
+        self.scale = self.head_dim ** (-0.5)
+
+    def init_tensors(self):
+        xavier_uniform_(self.in_proj_weight)
+        constant_(self.in_proj_bias, 0.0)
+        constant_(self.out_proj.bias, 0.0)
+
+    def forward(self, x, attn_mask=None):
+        batch, seq, embed_dim = x.shape
+        proj = F.linear(x, self.in_proj_weight, self.in_proj_bias)
+
+        # reshape to 3, E and not E, 3 is deliberate for better memory coalescing and keeping same order as chunk()
+        proj = (
+            proj.unflatten(-1, (3, embed_dim))
+            .unsqueeze(0)
+            .transpose(0, -2)
+            .squeeze(-2)
+            .contiguous()
+        )
+        q, k, v = proj[0], proj[1], proj[2]
+
+        ## Use "q_" so that we don't accidentally quit in pdb :)
+        q = rearrange(q, "b s (h d) -> b h s d", h=self.num_heads)
+        k = rearrange(k, "b s (h d) -> b h s d", h=self.num_heads)
+        v = rearrange(v, "b s (h d) -> b h s d", h=self.num_heads)
+
+        if self.rope:
+            q, k = self.rope(q, k)
+
+        attn = F.scaled_dot_product_attention(
+            q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False, scale=self.scale
+        )
+        attn = rearrange(attn, "b h s d -> b s (h d)")
+
+        return F.linear(attn, self.out_proj.weight, self.out_proj.bias)
+
 
 def test_qkv_project(width=1536, seq=1024, num_heads=16):
     np_x = np.random.uniform(size=(1, seq, width)).astype("float32")
@@ -117,7 +187,10 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     # Init Input
     # NOTE: If doing RoPE2D, will have to reformat to [b s (h d)].
     np_x = np.random.uniform(size=(1, SEQ_LEN, width)).astype("float32")
+    #np_x = np.ones((1, SEQ_LEN, width)).astype("float32")
     tvm_x, pt_x = get_tensors(np_x)
+
+    # I hypothesize the way weights are read in from pytorch are different from tvm.
     tvm_qkv_w = tvm.nd.array(pt_self_attn.in_proj_weight.detach().numpy())
     tvm_qkv_b = tvm.nd.array(pt_self_attn.in_proj_bias.detach().numpy())
     tvm_linear_w = tvm.nd.array(pt_self_attn.out_proj.weight.detach().numpy())
@@ -134,7 +207,7 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     print_diff(pt_out.numpy(), tvm_out.numpy())
     
 if __name__ == '__main__':
+    #test_sdpa()
+    #test_project_score()
     test_qkv_project()
-    test_sdpa()
-    test_project_score()
     test_self_attn()

@@ -68,8 +68,8 @@ def bb_self_attn():
             bb.emit_output(k)
             bb.emit_output(v)
 
-        # Scalar Dot Product Attention
-        # Softmax(QK^T/sqrt(dim_head))*V
+        ## Scalar Dot Product Attention
+        ## Softmax(QK^T/sqrt(dim_head))*V
         with bb.dataflow():
             # Apply Scalar Dot Product
             sdpa_gv = bb.add_func(fused_sdpa, "fused_sdpa")

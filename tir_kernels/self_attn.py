@@ -117,7 +117,7 @@ def project_fused_qkv(
     # NxSEQxWIDTH @ WIDTHxWIDTH = NxSEQxWIDTH
     for _n, s, w, wk in T.grid(n, seq, width, width):
         with T.block('self_attn_qkv_w'):
-            vn, vs, vw, vwk = T.axis.remap("SSSS", [_n, s, w, wk])
+            vn, vs, vw, vwk = T.axis.remap("SSSR", [_n, s, w, wk])
 
             with T.init():
                 OUT_Q[vn, vs, vw] = T.float32(0)
