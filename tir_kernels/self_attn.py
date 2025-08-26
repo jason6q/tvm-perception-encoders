@@ -118,6 +118,12 @@ def project_fused_qkv(
     for _n, s, w, wk in T.grid(n, seq, width, width):
         with T.block('self_attn_qkv_w'):
             vn, vs, vw, vwk = T.axis.remap("SSSS", [_n, s, w, wk])
+
+            with T.init():
+                OUT_Q[vn, vs, vw] = T.float32(0)
+                OUT_K[vn, vs, vw] = T.float32(0)
+                OUT_V[vn, vs, vw] = T.float32(0)
+
             OUT_Q[vn, vs, vw] += X[vn, vs, vwk] * QKV_W[vw, vwk]
             OUT_K[vn, vs, vw] += X[vn, vs, vwk] * QKV_W[1*width+vw, vwk]
             OUT_V[vn, vs, vw] += X[vn, vs, vwk] * QKV_W[2*width+vw, vwk]
