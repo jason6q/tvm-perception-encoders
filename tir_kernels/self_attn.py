@@ -20,16 +20,17 @@ def project_score(score: T.handle, linear_w: T.handle, linear_b: T.handle, out: 
     LINEAR_W = T.match_buffer(linear_w, (width,width), "float32")
     LINEAR_B = T.match_buffer(linear_b, (width,), "float32") # mimic broadcasting in Pytorch (N,S,W) + (W)
 
-    for _n, s, w in T.grid(n, seq, width):
-        with T.block("project_score"):
-            vn,vs,vw = T.axis.remap("SSS", [_n,s,w])
+    for _n, s, w, k in T.grid(n, seq, width, width):
+        with T.block("project_score_w"):
+            vn,vs,vw,vk = T.axis.remap("SSSR", [_n,s,w,k])
             with T.init():
                 OUT[vn, vs,vw] = T.float32(0)
-            P = T.alloc_buffer((1,), dtype="float32")
-            P[0] = 0
-            for k in T.serial(0,width):
-                P[0] += SCORE[vn,vs,k] * LINEAR_W[vw,k] # Linear_w is not transposed. So row-wise multiplying
-            OUT[vn,vs,vw] = P[0] + LINEAR_B[vw]
+            OUT[vn,vs,vw] += SCORE[vn,vs,vk] * LINEAR_W[vw,vk]
+
+    for _n, s, w in T.grid(n, seq, width):
+        with T.block("project_score_b"):
+            vn,vs,vw = T.axis.remap("SSS", [_n,s,w])
+            OUT[vn,vs,vw] += LINEAR_B[vw]
 
 @T.prim_func
 def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, dim_head: T.int64, score: T.handle):
@@ -44,16 +45,16 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, dim_head: T.int64, score:
 
     ## Calculate QK^T w/ online softmax?
     ## We'll have to split each head out of w
-    for _n, h, s1, s2 in T.grid(n, width // dim_head, seq, seq):
+    ## QK is (B,H,S,S) Q,K is (B,S,W)
+    for _n, h, s1, s2, k in T.grid(n, width // dim_head, seq, seq, dim_head):
         with T.block("fused_sdpa_qk"):
-            vn, vh, vs1, vs2 = T.axis.remap("SSSS", [_n, h, s1,s2])
+            vn, vh, vs1, vs2, vk = T.axis.remap("SSSSR", [_n, h, s1,s2,k])
             with T.init():
                 QK[vn, vh, vs1, vs2] = T.float32(0)
 
             # Calc dot products.
             # This is a row-wise dot product (Because we assume k isn't transposed.)
-            for k in T.serial(0, dim_head):
-                QK[vn, vh, vs1, vs2] += Q[vn, vs1, dim_head*vh + k] * K[vn, vs2, dim_head*vh + k] / T.sqrt(T.float32(dim_head))
+            QK[vn, vh, vs1, vs2] += Q[vn, vs1, dim_head*vh + vk] * K[vn, vs2, dim_head*vh + vk] / T.sqrt(T.float32(dim_head))
 
     ## Use an Safe Softmax Calculation to remove
     ## This is a CPU implementation.
@@ -68,6 +69,7 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, dim_head: T.int64, score:
             D_prev = T.alloc_buffer((), "float32")
 
             # init
+            # This can't be reduced I don't think
             M_prev[()] = T.min_value("float32")
             D_prev[()] = T.float32(0)
             for k in range(seq):               # <-- min=0 OK
@@ -82,15 +84,13 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, dim_head: T.int64, score:
                 SOFT[vn, vh, vs, k] = T.exp(QK[vn,vh,vs,k] - M_prev[()]) / D_prev[()]
 
     ## Score calculation
-    for _n, s, w in T.grid(n, seq, width):
+    for _n, s, w, k in T.grid(n, seq, width, seq):
         with T.block("fused_score"):
-            vn, vs, vw = T.axis.remap("SSS", [_n,s,w])
+            vn, vs, vw, vk = T.axis.remap("SSSR", [_n,s,w,k])
 
             with T.init():
                 SCORE_OUT[vn,vs,vw] = T.float32(0)
-
-            for k in range(seq):
-                SCORE_OUT[vn, vs, vw] += SOFT[vn, vw // dim_head, vs, k] * V[vn, k, vw] 
+            SCORE_OUT[vn, vs, vw] += SOFT[vn, vw // dim_head, vs, vk] * V[vn, vk, vw] 
 
 """
     This just projects X into the Q,K,V space.

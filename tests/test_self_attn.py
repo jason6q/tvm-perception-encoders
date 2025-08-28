@@ -207,7 +207,7 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     print_diff(pt_out.numpy(), tvm_out.numpy())
     
 if __name__ == '__main__':
-    #test_sdpa()
-    #test_project_score()
+    test_sdpa()
+    test_project_score()
     test_qkv_project()
     test_self_attn()
