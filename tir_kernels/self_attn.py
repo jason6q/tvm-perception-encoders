@@ -72,7 +72,7 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, dim_head: T.int64, score:
             # This can't be reduced I don't think
             M_prev[()] = T.min_value("float32")
             D_prev[()] = T.float32(0)
-            for k in range(seq):               # <-- min=0 OK
+            for k in range(seq):
                 x = QK[vn, vh, vs, k]
                 M_k = T.max(M_prev[()], x)
                 D_prev[()] = D_prev[()] * T.exp(M_prev[()] - M_k) + T.exp(x - M_k)
