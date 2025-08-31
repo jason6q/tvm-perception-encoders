@@ -5,6 +5,7 @@ Apache's TVM implementation of Meta's Perception Encoders. Most of it is written
 1. Get full inference working
 2. Optimize code, right now the functions are pretty slow. TIR Kernels are just naive implementations.
 3. add scheduling logic for CPU and CUDA support.
+4. Setup atol, rtol checks on test case similar to gradcheck
 
 I chose to translate Perception Encoders because it's fairly recent as of the date of writing this and I read a lot of computer vision papers.
 
