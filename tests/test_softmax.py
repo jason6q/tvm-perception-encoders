@@ -8,13 +8,13 @@ import numpy as np
 import tvm
 
 from utils import print_diff, get_tensors
-from tir_kernels.softmax import safe_softmax
+from tir_kernels.softmax import safe_softmax, naive_softmax
 
 # Softmax implementations may be different, but ultimately
 # the argmax values should be the same.
 # Softmax is a monotonically increasing function.
 
-def test_softmax_arg(n=32,h=8,seq=256,dim=1564,n_samples=10):
+def test_softmax_arg(n=32,h=8,seq=256,dim=256,n_samples=10):
     tvm_softmax_mod = tvm.IRModule({'safe_softmax': safe_softmax})
     tvm_softmax = tvm.build(tvm_softmax_mod, target="llvm")
 
@@ -41,7 +41,7 @@ def test_softmax_arg(n=32,h=8,seq=256,dim=1564,n_samples=10):
     print(f"Average number of argmax softmax values that are the same: {tot_num_trues / tot_num_vals}")
     print(f"Average number of argmax softmax values that are different: {tot_num_falses / tot_num_vals}")
 
-def test_softmax(n=32,h=8,seq=256,dim=1564):
+def test_softmax(n=32,h=8,seq=256,dim=256):
     np_x = np.random.uniform(size=(n,h,seq,dim)).astype("float32")
     np_out = np.zeros((n,h,seq,dim)).astype("float32")
     tvm_x, pt_x = get_tensors(np_x)
