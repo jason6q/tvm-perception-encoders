@@ -47,3 +47,28 @@ def print_diff(x: np.ndarray, y: np.ndarray):
     print(f"Mean absolute Difference: {mad(x,y):.8f}")
     print(f"Mean Squared Error: {mad(x,y):.8f}")
     return
+
+def find_mad_idx(A: np.ndarray, B: np.ndarray):
+    """
+        Sometimes it can be tricky to figure out the broadcasting logic
+        between TVM code and PyTorch code. So this is primarily used
+        for debugging purposes where we search for the MAD
+        per element in B from A. Each element in A will be mapped to the indexing
+        of B that is the MAD.
+
+        Advised to use small matrices for this. Not perfect, you may get ambiguous mappings.
+    """
+    assert A.shape == B.shape, "A and B must have the same shape."
+    assert len(A.shape) == 4, "Shape size must be 4"
+
+    # A very sub-optimal implementation
+    n,h,seq,dim = A.shape
+    A_mins = np.zeros_like(A, dtype=np.int32)
+    for ni in range(n):
+        for hi in range(h):
+            for seqi in range(seq):
+                for dimi in range(dim):
+                    diff = np.abs(B - A[ni,hi,seqi,dimi])
+                    A_mins[ni,hi,seqi,dimi] = np.argmin(diff)
+
+    return A_mins
