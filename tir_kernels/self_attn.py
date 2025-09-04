@@ -7,7 +7,6 @@ from tvm.script import relax as R
     fused heads with online safe softmax calculation
 """
 
-
 """
     Assume that that weights are already transposed.
 """
@@ -63,12 +62,15 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, dim_head: T.int64, score:
         with T.block("fused_softmax_qkv"):
             vn, vh, vs = T.axis.remap("SSS", [_n,h,s])
 
+            with T.init():
+                SOFT = T.float32(0)
+
             # We have to allocate the buffer here, if it were just
             # a regular variable it will not change within the for loop block.
             M_prev = T.alloc_buffer((), "float32")
             D_prev = T.alloc_buffer((), "float32")
 
-            # init
+            # Init
             # This can't be reduced I don't think
             M_prev[()] = T.min_value("float32")
             D_prev[()] = T.float32(0)
@@ -84,13 +86,14 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, dim_head: T.int64, score:
                 SOFT[vn, vh, vs, k] = T.exp(QK[vn,vh,vs,k] - M_prev[()]) / D_prev[()]
 
     ## Score calculation
+    # WARNING: SOMETHING WRONG HEREEEE
     for _n, s, w, k in T.grid(n, seq, width, seq):
         with T.block("fused_score"):
             vn, vs, vw, vk = T.axis.remap("SSSR", [_n,s,w,k])
 
             with T.init():
                 SCORE_OUT[vn,vs,vw] = T.float32(0)
-            SCORE_OUT[vn, vs, vw] += SOFT[vn, vw // dim_head, vs, vk] * V[vn, vk, vw] 
+            SCORE_OUT[vn, vs, vw] += SOFT[vn, vw // dim_head, vs, vk] * V[vn, vk, vw]
 
 """
     This just projects X into the Q,K,V space.
