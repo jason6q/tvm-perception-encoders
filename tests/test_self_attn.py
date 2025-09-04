@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from core.vision_encoder.rope import Rope2D
 from einops import rearrange
 
-from utils import print_diff, get_tensors
+from utils import print_diff, get_tensors, find_mad_idx
 from pe import bb_self_attn
 from rope import build_axial_freqs
 
@@ -81,7 +81,8 @@ class SelfAttention(nn.Module):
         )
         attn = rearrange(attn, "b h s d -> b s (h d)")
 
-        return F.linear(attn, self.out_proj.weight, self.out_proj.bias)
+        return attn
+        #return F.linear(attn, self.out_proj.weight, self.out_proj.bias)
 
 
 def test_qkv_project(width=1536, seq=1024, num_heads=16):
@@ -117,7 +118,7 @@ def test_qkv_project(width=1536, seq=1024, num_heads=16):
     print_diff(pt_k.numpy(), tvm_k_out.numpy())
     print_diff(pt_v.numpy(), tvm_v_out.numpy())
 
-def test_sdpa(width=1536, seq=1024, num_heads=16):
+def test_sdpa(width=32, seq=16, num_heads=1):
     head_dim = width // num_heads
 
     # fused_sdpa takes in a flattened shape.
@@ -143,9 +144,11 @@ def test_sdpa(width=1536, seq=1024, num_heads=16):
     tvm_fused_sdpa = tvm.build(fused_sdpa_mod, target="llvm")
 
     tvm_fused_sdpa(tvm_q, tvm_k, tvm_v, num_heads, tvm_score)
-    tvm_score = tvm_score.numpy().reshape(1,seq,num_heads,head_dim).transpose(0,2,1,3)
+
+    tvm_score = tvm_score.numpy().reshape(1, seq, num_heads, head_dim).transpose(0,2,1,3)
     print_diff(pt_sdpa_out.numpy(), tvm_score)
-    return
+    mad_mat = find_mad_idx(pt_sdpa_out.numpy(), tvm_score)
+    print(mad_mat)
 
 def test_project_score(width=1536, seq=1024):
     np_score = np.random.uniform(size=(1, seq, width)).astype("float32")
@@ -204,10 +207,12 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     tvm_freqs = tvm.nd.array(freqs)
     tvm_out = tvm_self_attn['self_attn'](
         tvm_x, tvm_qkv_w, tvm_qkv_b, tvm_linear_w, tvm_linear_b, tvm_freqs)
+
     print_diff(pt_out.numpy(), tvm_out.numpy())
+    print(pt_out.numpy()[0,0], tvm_out.numpy()[0,0])
     
 if __name__ == '__main__':
     test_sdpa()
-    test_project_score()
-    test_qkv_project()
-    test_self_attn()
+    #test_project_score()
+    #test_qkv_project()
+    #test_self_attn(width=128)
