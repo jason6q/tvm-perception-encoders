@@ -118,7 +118,7 @@ def test_qkv_project(width=1536, seq=1024, num_heads=16):
     print_diff(pt_k.numpy(), tvm_k_out.numpy())
     print_diff(pt_v.numpy(), tvm_v_out.numpy())
 
-def test_sdpa(width=32, seq=16, num_heads=1):
+def test_sdpa(width=32, seq=16, num_heads=4):
     head_dim = width // num_heads
 
     # fused_sdpa takes in a flattened shape.
@@ -143,12 +143,12 @@ def test_sdpa(width=32, seq=16, num_heads=1):
     fused_sdpa_mod = tvm.IRModule({'fused_sdpa': fused_sdpa})
     tvm_fused_sdpa = tvm.build(fused_sdpa_mod, target="llvm")
 
-    tvm_fused_sdpa(tvm_q, tvm_k, tvm_v, num_heads, tvm_score)
+    tvm_fused_sdpa(tvm_q, tvm_k, tvm_v, head_dim, tvm_score)
 
     tvm_score = tvm_score.numpy().reshape(1, seq, num_heads, head_dim).transpose(0,2,1,3)
     print_diff(pt_sdpa_out.numpy(), tvm_score)
-    mad_mat = find_mad_idx(pt_sdpa_out.numpy(), tvm_score)
-    print(mad_mat)
+    #mad_mat = find_mad_idx(pt_sdpa_out.numpy(), tvm_score)
+    #print(mad_mat)
 
 def test_project_score(width=1536, seq=1024):
     np_score = np.random.uniform(size=(1, seq, width)).astype("float32")
@@ -213,6 +213,6 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     
 if __name__ == '__main__':
     test_sdpa()
-    #test_project_score()
-    #test_qkv_project()
-    #test_self_attn(width=128)
+    test_project_score()
+    test_qkv_project()
+    test_self_attn(width=128)
