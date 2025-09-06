@@ -42,10 +42,12 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, dim_head: T.int64, score:
     QK = T.alloc_buffer((n,width // dim_head,seq,seq), "float32")
     SOFT = T.alloc_buffer((n, width // dim_head ,seq,seq), "float32")
 
+    dim_head32 = T.Cast("int32", dim_head)
+
     ## Calculate QK^T w/ online softmax?
     ## We'll have to split each head out of w
     ## QK is (B,H,S,S) Q,K is (B,S,W)
-    for _n, h, s1, s2, k in T.grid(n, width // dim_head, seq, seq, dim_head):
+    for _n, h, s1, s2, k in T.grid(n, width // dim_head32, seq, seq, dim_head):
         with T.block("fused_sdpa_qk"):
             vn, vh, vs1, vs2, vk = T.axis.remap("SSSSR", [_n, h, s1,s2,k])
             with T.init():
@@ -53,17 +55,14 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, dim_head: T.int64, score:
 
             # Calc dot products.
             # This is a row-wise dot product (Because we assume k isn't transposed.)
-            QK[vn, vh, vs1, vs2] += Q[vn, vs1, dim_head*vh + vk] * K[vn, vs2, dim_head*vh + vk] / T.sqrt(T.float32(dim_head))
+            QK[vn, vh, vs1, vs2] += Q[vn, vs1, dim_head32*vh + vk] * K[vn, vs2, dim_head32*vh + vk] / T.sqrt(T.float32(dim_head32))
 
     ## Use an Safe Softmax Calculation to remove
     ## This is a CPU implementation.
     ## TODO: Do Parallel Equivalent.
-    for _n, h, s in T.grid(n,width // dim_head, seq):
+    for _n, h, s in T.grid(n,width // dim_head32, seq):
         with T.block("fused_softmax_qkv"):
             vn, vh, vs = T.axis.remap("SSS", [_n,h,s])
-
-            with T.init():
-                SOFT = T.float32(0)
 
             # We have to allocate the buffer here, if it were just
             # a regular variable it will not change within the for loop block.
@@ -86,14 +85,13 @@ def fused_sdpa( q: T.handle, k: T.handle, v: T.handle, dim_head: T.int64, score:
                 SOFT[vn, vh, vs, k] = T.exp(QK[vn,vh,vs,k] - M_prev[()]) / D_prev[()]
 
     ## Score calculation
-    # WARNING: SOMETHING WRONG HEREEEE
     for _n, s, w, k in T.grid(n, seq, width, seq):
         with T.block("fused_score"):
             vn, vs, vw, vk = T.axis.remap("SSSR", [_n,s,w,k])
 
             with T.init():
                 SCORE_OUT[vn,vs,vw] = T.float32(0)
-            SCORE_OUT[vn, vs, vw] += SOFT[vn, vw // dim_head, vs, vk] * V[vn, vk, vw]
+            SCORE_OUT[vn, vs, vw] += SOFT[vn, vw // dim_head32, vs, vk] * V[vn, vk, vw]
 
 """
     This just projects X into the Q,K,V space.

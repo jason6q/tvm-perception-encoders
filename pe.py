@@ -26,7 +26,7 @@ def bb_self_attn():
     """
     bb = relax.BlockBuilder()
 
-    n,seq,width, dim_head = T.int64(), T.int64(), T.int64(), T.int64()
+    n,seq,width, dim_head = T.int64(), T.int64(), T.int64(), T.int64() # Relax requires int64 but tir is int32
 
     x = relax.Var("x", R.Tensor((n, seq, width), "float32"))
     qkv_w = relax.Var("qkv_weight", R.Tensor((3*width, width), "float32"))
@@ -51,22 +51,17 @@ def bb_self_attn():
                     ]
                 )
             )
-            bb.emit_output(qkv_res)
+            q = bb.emit(relax.TupleGetItem(qkv_res, 0))
+            k = bb.emit(relax.TupleGetItem(qkv_res, 1))
+            v = bb.emit(relax.TupleGetItem(qkv_res, 2))
 
         # Apply RoPE2D to Q,K,V
         with bb.dataflow():
-            q,k,v = qkv_res[0], qkv_res[1], qkv_res[2]
-
             # Apply RoPE2D
             apply_rope2d_gv = bb.add_func(apply_fused_rope2d, "apply_rope2d")
             # TODO: Consider packing Q,K,V back into a 3*width tensor.
-            q = bb.emit(relax.call_tir(apply_rope2d_gv, args=[q,freqs],out_sinfo=[R.Tensor((n,seq,width),"float32")]))
-            k = bb.emit(relax.call_tir(apply_rope2d_gv, args=[k,freqs],out_sinfo=[R.Tensor((n,seq,width),"float32")]))
-            v = bb.emit(relax.call_tir(apply_rope2d_gv, args=[v,freqs],out_sinfo=[R.Tensor((n,seq,width),"float32")]))
-
-            bb.emit_output(q)
-            bb.emit_output(k)
-            bb.emit_output(v)
+            q = bb.emit(relax.call_tir(apply_rope2d_gv, args=[q,freqs],out_sinfo=R.Tensor((n,seq,width),"float32")))
+            k = bb.emit(relax.call_tir(apply_rope2d_gv, args=[k,freqs],out_sinfo=R.Tensor((n,seq,width),"float32")))
 
         ## Scalar Dot Product Attention
         ## Softmax(QK^T/sqrt(dim_head))*V
@@ -76,9 +71,7 @@ def bb_self_attn():
             score = bb.emit(relax.call_tir(
                 sdpa_gv,
                 args=[q, k, v, dim_head],
-                out_sinfo=[
-                    R.Tensor((n,seq,width), "float32")
-                ]
+                out_sinfo=R.Tensor((n,seq,width), "float32")
             ))
 
             ## Apply linear projection
@@ -87,9 +80,7 @@ def bb_self_attn():
             out = bb.emit(relax.call_tir(
                 project_score_gv,
                 args=[score, linear_w, linear_b],
-                out_sinfo=[
-                    R.Tensor((n,seq,width), "float32")
-                ]
+                out_sinfo=R.Tensor((n,seq,width), "float32")
             ))
             bb.emit_output(out)
 

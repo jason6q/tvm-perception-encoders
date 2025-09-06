@@ -81,8 +81,7 @@ class SelfAttention(nn.Module):
         )
         attn = rearrange(attn, "b h s d -> b s (h d)")
 
-        return attn
-        #return F.linear(attn, self.out_proj.weight, self.out_proj.bias)
+        return F.linear(attn, self.out_proj.weight, self.out_proj.bias)
 
 
 def test_qkv_project(width=1536, seq=1024, num_heads=16):
@@ -193,7 +192,6 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
     #np_x = np.ones((1, SEQ_LEN, width)).astype("float32")
     tvm_x, pt_x = get_tensors(np_x)
 
-    # I hypothesize the way weights are read in from pytorch are different from tvm.
     tvm_qkv_w = tvm.nd.array(pt_self_attn.in_proj_weight.detach().numpy())
     tvm_qkv_b = tvm.nd.array(pt_self_attn.in_proj_bias.detach().numpy())
     tvm_linear_w = tvm.nd.array(pt_self_attn.out_proj.weight.detach().numpy())
@@ -209,10 +207,10 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
         tvm_x, tvm_qkv_w, tvm_qkv_b, tvm_linear_w, tvm_linear_b, tvm_freqs)
 
     print_diff(pt_out.numpy(), tvm_out.numpy())
-    print(pt_out.numpy()[0,0], tvm_out.numpy()[0,0])
+    #print_diff(pt_out[2].numpy(), tvm_out[2].numpy())
     
 if __name__ == '__main__':
     test_sdpa()
     test_project_score()
     test_qkv_project()
-    test_self_attn(width=128)
+    test_self_attn(width=1024)
