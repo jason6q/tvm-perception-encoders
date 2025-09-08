@@ -26,7 +26,7 @@ def bb_self_attn():
     """
     bb = relax.BlockBuilder()
 
-    n,seq,width, dim_head = T.int64(), T.int64(), T.int64(), T.int64() # Relax requires int64 but tir is int32
+    n, seq, width, dim_head = T.int64(), T.int64(), T.int64(), T.int64() # Relax requires int64 but tir is int32
 
     x = relax.Var("x", R.Tensor((n, seq, width), "float32"))
     qkv_w = relax.Var("qkv_weight", R.Tensor((3*width, width), "float32"))
@@ -87,3 +87,66 @@ def bb_self_attn():
         bb.emit_func_output(out)
     mod = bb.get()
     return mod
+
+def bb_res_attn_block(block_weights: dict):
+    """
+        Residual Attention Block to make up the transformer.
+        LayerNorm(Linear(LayerNorm(MHSA + x)) + x)
+    """
+    bb = relax.BlockBuilder()
+    n, seq, width, dim_head = T.int64(), T.int64(), T.int64(), T.int64() # Relax requires int64 but tir is int32
+
+    x = relax.Var("x", R.Tensor((n, seq, width), "float32"))
+    attn_in_proj_b = relax.Var("attn_in_proj_b", R.Tensor((3*width, width), "float32"))
+    attn_in_proj_w = relax.Var("attn_in_proj_w", R.Tensor((width), "float32"))
+    attn_out_proj_b = relax.Var("attn_out_proj_w", R.Tensor((width, width), "float32"))
+    attn_out_proj_w = relax.Var("attn_out_proj_w", R.Tensor((width,), "float32"))
+    ln_1_b = relax.Var("ln_1_b", R.Tensor((width,), "float32"))
+    ln_1_w = relax.Var("ln_1_w", R.Tensor((width,), "float32"))
+    ln_2_b = relax.Var("ln_2_b", R.Tensor((width,), "float32"))
+    ln_2_w = relax.Var("ln_2_w", R.Tensor((width,), "float32"))
+    ls_1_b = relax.Var("ls_1_b", R.Tensor((width,), "float32"))
+    ls_1_w = relax.Var("ls_1_w", R.Tensor((width,), "float32"))
+    ls_2_b = relax.Var("ls_2_b", R.Tensor((width,), "float32"))
+    ls_2_w = relax.Var("ls_2_w", R.Tensor((width,), "float32"))
+    mlp_c_fc_b = relax.Var("mlp_c_fc_b", R.Tensor((width,), "float32"))
+    mlp_c_fc_w = relax.Var("mlp_c_fc_w", R.Tensor((width,), "float32"))
+    mlp_c_proj_b = relax.Var("mlp_c_proj_b", R.Tensor((width,), "float32"))
+    mlp_c_proj_w = relax.Var("mlp_c_proj_w", R.Tensor((width,), "float32"))
+
+    # Create Relax Module for Self Attention
+    self_attn = bb_self_attn()
+
+    with bb.function("res_attn_block", [
+        x,
+        attn_in_proj_b,
+        attn_in_proj_w,
+        attn_out_proj_b,
+        attn_out_proj_w,
+        ln_1_b, 
+        ln_1_w, 
+        ln_2_b,
+        ln_2_w,
+        ln_2_b,
+        ls_1_b,
+        ls_1_w,
+        ls_2_b,
+        ls_2_w,
+        mlp_c_fc_b,
+        mlp_c_fc_w,
+        mlp_c_proj_b,
+        mlp_c_proj_w
+    ]):
+        # Two Layer Norms per residual path
+
+        pass
+
+    # Initialize Multi-Head Self Attention with RoPE2D
+    return
+
+def bb_pe_spatial():
+    """
+        Whole transformer model. Load all weights in from
+        PE Spatial here as well.
+    """
+    return
