@@ -88,17 +88,17 @@ def bb_self_attn():
     mod = bb.get()
     return mod
 
-def bb_res_attn_block(block_weights: dict):
+def bb_res_attn_block():
     """
         Residual Attention Block to make up the transformer.
         LayerNorm(Linear(LayerNorm(MHSA + x)) + x)
     """
     bb = relax.BlockBuilder()
-    n, seq, width, dim_head = T.int64(), T.int64(), T.int64(), T.int64() # Relax requires int64 but tir is int32
+    n, seq, width, mlp_width, dim_head = T.int64(), T.int64(), T.int64(), T.int64(), T.int64() # Relax requires int64 but tir is int32
 
     x = relax.Var("x", R.Tensor((n, seq, width), "float32"))
     attn_in_proj_b = relax.Var("attn_in_proj_b", R.Tensor((3*width, width), "float32"))
-    attn_in_proj_w = relax.Var("attn_in_proj_w", R.Tensor((width), "float32"))
+    attn_in_proj_w = relax.Var("attn_in_proj_w", R.Tensor((width,), "float32"))
     attn_out_proj_b = relax.Var("attn_out_proj_w", R.Tensor((width, width), "float32"))
     attn_out_proj_w = relax.Var("attn_out_proj_w", R.Tensor((width,), "float32"))
     ln_1_b = relax.Var("ln_1_b", R.Tensor((width,), "float32"))
@@ -110,9 +110,9 @@ def bb_res_attn_block(block_weights: dict):
     ls_2_b = relax.Var("ls_2_b", R.Tensor((width,), "float32"))
     ls_2_w = relax.Var("ls_2_w", R.Tensor((width,), "float32"))
     mlp_c_fc_b = relax.Var("mlp_c_fc_b", R.Tensor((width,), "float32"))
-    mlp_c_fc_w = relax.Var("mlp_c_fc_w", R.Tensor((width,), "float32"))
-    mlp_c_proj_b = relax.Var("mlp_c_proj_b", R.Tensor((width,), "float32"))
-    mlp_c_proj_w = relax.Var("mlp_c_proj_w", R.Tensor((width,), "float32"))
+    mlp_c_fc_w = relax.Var("mlp_c_fc_w", R.Tensor((mlp_width, width), "float32"))
+    mlp_c_proj_b = relax.Var("mlp_c_proj_b", R.Tensor((mlp_width,), "float32"))
+    mlp_c_proj_w = relax.Var("mlp_c_proj_w", R.Tensor((width, mlp_width), "float32"))
 
     # Create Relax Module for Self Attention
     self_attn = bb_self_attn()
