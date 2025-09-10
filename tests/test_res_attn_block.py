@@ -49,7 +49,7 @@ def test_res_attn_block(width=1536, num_heads=16, grid_h=32, grid_w=32, num_laye
     pt_res_attn = ResidualAttentionBlock(width, num_heads, mlp_ratio, ls_init_value, rope = pt_rope)
 
     # Initialize TVM Module
-    #attn_block = bb_res_attn_block()
+    attn_block = bb_res_attn_block()
 
     return
 

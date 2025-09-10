@@ -16,7 +16,6 @@ class PEMappingTVM:
     """
         A map from torch to TVM modules.
     """
-
     
 def select_params(mod_name: str, state_dict: dict) -> torch.Tensor :
     """
@@ -24,6 +23,10 @@ def select_params(mod_name: str, state_dict: dict) -> torch.Tensor :
     """
     assert mod_name in state_dict.keys(), f"{mod_name} does not exist."
     return state_dict[mod_name]
+
+    
+def load_weights(state_dict: dict):
+    return
 
 def map_torch2tvm(state_dict: dict) -> PEMappingTVM:
     """
