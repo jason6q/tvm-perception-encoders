@@ -24,12 +24,12 @@ def layer_norm(x: T.handle, gamma_w: T.handle, beta_w: T.handle, out: T.handle):
             vn,vs,vw = T.axis.remap("SSR", [_n,s,w])
             with T.init():
                 MU[vn, vs] = T.float32(0)
-            MU[vn, vs] += X[n, vs, vw]
+            MU[vn, vs] += X[vn, vs, vw]
 
     for _n, s in T.grid(n, seq):
         with T.block("layer_norm_div"):
             vn, vs = T.axis.remap("SS", [_n,s])
-            MU[vn,vs] = MU[vn,vs] / width
+            MU[vn,vs] /= width
 
     for _n, s, w in T.grid(n, seq, width):
         with T.block("layer_norm_std"):
@@ -43,7 +43,6 @@ def layer_norm(x: T.handle, gamma_w: T.handle, beta_w: T.handle, out: T.handle):
         with T.block("layer_norm_div"):
             vn, vs = T.axis.remap("SS", [_n,s])
             STD[vn,vs] = T.sqrt(STD[vn,vs] / width)
-            MU[vn,vs] /= width
 
     # Calculate Layer Norm with gamma beta.
     for _n, s, w in T.grid(n, seq, width):
