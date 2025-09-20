@@ -147,14 +147,16 @@ def bb_res_attn_block():
         layerscale_gv = bb.add_func(layer_scale, "layer_scale")
         mlp_gv = bb.add_func(mlp, "mlp")
 
+        # Layer Norm 1
         with bb.dataflow():
             ln1_out = bb.emit(relax.call_tir(
                 layernorm_gv,
-                args=[x, ls_1_w, ls_2_w],
-                out_sinfo=R.Tensor((width,), "float32")
+                args=[x, ln_1_w, ln_1_b],
+                out_sinfo=R.Tensor((n,seq,width), "float32")
             ))
             bb.emit_output(ln1_out)
 
+        # Multi-headed Self Attention
         with bb.dataflow():
             mhsa_out = bb.emit(relax.Call(self_attn['self_attn'], [
                 ln1_out,
@@ -164,38 +166,49 @@ def bb_res_attn_block():
             ]))
             bb.emit_output(mhsa_out)
 
+        # Layer Scale 1
         with bb.dataflow():
             ls1_out = bb.emit(relax.call_tir(
                 layerscale_gv,
-                args=[],
-                out_sinfo=None
+                args=[mhsa_out, ls_1_w],
+                out_sinfo=R.Tensor((n, seq, width), "float32")
             ))
             bb.emit_output(ls1_out)
         res_x = bb.emit(x + ls1_out)
+
+        # Layer Norm 2
+        with bb.dataflow():
+            ln2_out = bb.emit(relax.call_tir(
+                layernorm_gv,
+                args=[res_x, ln_2_w, ln_2_b],
+                out_sinfo=R.Tensor((n,seq,width), "float32")
+            ))
 
         with bb.dataflow():
             mlp_out = bb.emit(relax.call_tir(
                 mlp_gv,
                 args=[
-                    res_x,
+                    ln2_out,
                     mlp_c_fc_b,
                     mlp_c_fc_w,
                     mlp_c_proj_b,
                     mlp_c_proj_w
                 ],
-                out_sinfo=None
+                out_sinfo=R.Tensor((n,seq,width), "float32")
             ))
             bb.emit_output(mlp_out)
 
+        # Layer Scale 2
         with bb.dataflow():
             ls2_out = bb.emit(relax.call_tir(
                 layerscale_gv,
-                args=[],
-                out_sinfo=None
+                args=[mlp_out, ls_2_w],
+                out_sinfo=R.Tensor((n, seq, width), "float32")
             ))
             bb.emit_output(ls2_out)
-        res_x = bb.emit(x + ls2_out)
-        bb.emit_func_output(res_x)
+        res2_x = bb.emit(x + ls2_out)
+
+        bb.emit_func_output(res2_x)
 
     mod = bb.get()
     return mod
