@@ -207,7 +207,6 @@ def test_self_attn(width=1536, num_heads=16, grid_h=32, grid_w=32):
         tvm_x, tvm_qkv_w, tvm_qkv_b, tvm_linear_w, tvm_linear_b, tvm_freqs)
 
     print_diff(pt_out.numpy(), tvm_out.numpy())
-    #print_diff(pt_out[2].numpy(), tvm_out[2].numpy())
     
 if __name__ == '__main__':
     test_sdpa()
