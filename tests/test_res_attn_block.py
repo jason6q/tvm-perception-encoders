@@ -18,7 +18,7 @@ def test_res_attn_block(n=1, seq=2, width=1536, mlp_width=1024, num_heads=16, gr
     np_attn_in_proj_w = np.random.uniform(size=(3*width, width)).astype("float32")
     tvm_attn_in_proj_w, pt_attn_in_proj_w = get_tensors(np_attn_in_proj_w)
 
-    np_attn_in_proj_b = np.random.uniform(size=(width)).astype("float32")
+    np_attn_in_proj_b = np.random.uniform(size=(3*width)).astype("float32")
     tvm_attn_in_proj_b, pt_attn_in_proj_b = get_tensors(np_attn_in_proj_b)
 
     np_attn_out_proj_w = np.random.uniform(size=(width, width)).astype("float32")
