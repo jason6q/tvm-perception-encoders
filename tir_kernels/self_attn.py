@@ -102,7 +102,7 @@ def project_fused_qkv(
     qkv_w: T.handle, qkv_b: T.handle, 
     out_q: T.handle, out_k: T.handle, out_v: T.handle
 ):
-    T.func_attr({"global_symbol": "project_fused_qkv", "tir.noalias": True})
+    #T.func_attr({"global_symbol": "project_fused_qkv", "tir.noalias": True})
     n, seq, width = T.int32(), T.int32(), T.int32()
 
     # We're assuming weights are packed here.

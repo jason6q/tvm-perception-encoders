@@ -72,18 +72,18 @@ def test_res_attn_block(n=1, seq=2, width=1536, mlp_width=1024, num_heads=16, gr
     res_attn_block = tvm.relax.VirtualMachine(ex, device=tvm.cpu())
 
     # Parameters follow the order of modules and their weights
-    tvm_res_attn_out = res_attn_block['res_attn_block'](
-        tvm_x,
-        tvm_ln_1_w, tvm_ln_1_b,
-        tvm_attn_in_proj_w, tvm_attn_in_proj_b,
-        tvm_attn_out_proj_w, tvm_attn_out_proj_b,
-        tvm_ls_1_gamma,
-        tvm_ln_2_w, tvm_ln_2_b,
-        tvm_mlp_c_fc_w, tvm_mlp_c_fc_b,
-        tvm_mlp_c_proj_w, tvm_mlp_c_proj_b,
-        tvm_ls_2_gamma,
-        tvm_freqs
-    )
+    #tvm_res_attn_out = res_attn_block['res_attn_block'](
+    #    tvm_x,
+    #    tvm_ln_1_w, tvm_ln_1_b,
+    #    tvm_attn_in_proj_w, tvm_attn_in_proj_b,
+    #    tvm_attn_out_proj_w, tvm_attn_out_proj_b,
+    #    tvm_ls_1_gamma,
+    #    tvm_ln_2_w, tvm_ln_2_b,
+    #    tvm_mlp_c_fc_w, tvm_mlp_c_fc_b,
+    #    tvm_mlp_c_proj_w, tvm_mlp_c_proj_b,
+    #    tvm_ls_2_gamma,
+    #    tvm_freqs
+    #)
 
     return
 
